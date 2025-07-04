@@ -21,6 +21,46 @@ export interface InvoiceWithPatient extends Invoice {
   };
 }
 
+// Mock data for development
+const mockInvoices: Invoice[] = [
+  {
+    id: '1',
+    invoiceNumber: 'INV-2023-001',
+    issueDate: new Date('2023-05-15'),
+    dueDate: new Date('2023-06-15'),
+    subtotal: 150.00,
+    taxRate: 22.00,
+    taxAmount: 33.00,
+    total: 183.00,
+    status: 'paid',
+    paymentMethod: 'card',
+    paymentDate: new Date('2023-05-20'),
+    patientId: '1',
+    description: 'Pulizia dentale e controllo',
+    notes: 'Pagamento ricevuto',
+    createdAt: new Date('2023-05-15'),
+    updatedAt: new Date('2023-05-20'),
+  },
+  {
+    id: '2',
+    invoiceNumber: 'INV-2023-002',
+    issueDate: new Date('2023-06-10'),
+    dueDate: new Date('2023-07-10'),
+    subtotal: 300.00,
+    taxRate: 22.00,
+    taxAmount: 66.00,
+    total: 366.00,
+    status: 'sent',
+    paymentMethod: undefined,
+    paymentDate: undefined,
+    patientId: '2',
+    description: 'Otturazione dente 36',
+    notes: 'In attesa di pagamento',
+    createdAt: new Date('2023-06-10'),
+    updatedAt: new Date('2023-06-10'),
+  },
+];
+
 export interface InvoiceSearchFilters {
   search?: string;
   status?: string;
@@ -56,83 +96,55 @@ export class InvoiceService {
       sortOrder = 'desc'
     } = pagination;
 
-    const skip = (page - 1) * limit;
+    // Mock implementation - filter and paginate mockInvoices
+    let filteredInvoices = [...mockInvoices];
 
-    // Costruzione dei filtri per Prisma
-    const where: Prisma.InvoiceWhereInput = {};
-
+    // Apply search filter
     if (filters.search) {
-      where.OR = [
-        { invoiceNumber: { contains: filters.search, mode: 'insensitive' } },
-        { description: { contains: filters.search, mode: 'insensitive' } },
-        { patient: {
-          OR: [
-            { firstName: { contains: filters.search, mode: 'insensitive' } },
-            { lastName: { contains: filters.search, mode: 'insensitive' } },
-            { fiscalCode: { contains: filters.search, mode: 'insensitive' } },
-          ]
-        }},
-      ];
+      const searchTerm = filters.search.toLowerCase();
+      filteredInvoices = filteredInvoices.filter(invoice =>
+        invoice.invoiceNumber.toLowerCase().includes(searchTerm) ||
+        invoice.description?.toLowerCase().includes(searchTerm)
+      );
     }
 
+    // Apply other filters
     if (filters.status) {
-      where.status = filters.status;
+      filteredInvoices = filteredInvoices.filter(invoice => invoice.status === filters.status);
     }
 
     if (filters.patientId) {
-      where.patientId = filters.patientId;
+      filteredInvoices = filteredInvoices.filter(invoice => invoice.patientId === filters.patientId);
     }
 
-    if (filters.dateFrom || filters.dateTo) {
-      where.issueDate = {};
-      if (filters.dateFrom) {
-        where.issueDate.gte = filters.dateFrom;
-      }
-      if (filters.dateTo) {
-        where.issueDate.lte = filters.dateTo;
-      }
+    if (filters.dateFrom) {
+      filteredInvoices = filteredInvoices.filter(invoice => invoice.issueDate >= filters.dateFrom!);
     }
 
-    if (filters.amountFrom || filters.amountTo) {
-      where.total = {};
-      if (filters.amountFrom) {
-        where.total.gte = filters.amountFrom;
-      }
-      if (filters.amountTo) {
-        where.total.lte = filters.amountTo;
-      }
+    if (filters.dateTo) {
+      filteredInvoices = filteredInvoices.filter(invoice => invoice.issueDate <= filters.dateTo!);
     }
 
-    // Esecuzione query con conteggio totale
-    const [invoices, total] = await Promise.all([
-      prisma.invoice.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { [sortBy]: sortOrder },
-        include: {
-          patient: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              email: true,
-              fiscalCode: true,
-            },
-          },
-        },
-      }),
-      prisma.invoice.count({ where }),
-    ]);
+    if (filters.amountFrom) {
+      filteredInvoices = filteredInvoices.filter(invoice => invoice.total >= filters.amountFrom!);
+    }
+
+    if (filters.amountTo) {
+      filteredInvoices = filteredInvoices.filter(invoice => invoice.total <= filters.amountTo!);
+    }
+
+    // Apply pagination
+    const skip = (page - 1) * limit;
+    const paginatedInvoices = filteredInvoices.slice(skip, skip + limit);
 
     return {
-      invoices,
+      invoices: paginatedInvoices,
       pagination: {
         page,
         limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-        hasNext: page * limit < total,
+        total: filteredInvoices.length,
+        totalPages: Math.ceil(filteredInvoices.length / limit),
+        hasNext: page * limit < filteredInvoices.length,
         hasPrev: page > 1,
       },
     };
@@ -142,68 +154,70 @@ export class InvoiceService {
    * Recupera una fattura per ID con dati del paziente
    */
   static async getInvoiceById(id: string): Promise<InvoiceWithPatient | null> {
-    return await prisma.invoice.findUnique({
-      where: { id },
-      include: {
-        patient: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            fiscalCode: true,
-          },
-        },
-      },
-    });
+    const invoice = mockInvoices.find(inv => inv.id === id);
+    if (!invoice) return null;
+
+    // Mock patient data for the invoice
+    const mockPatient = {
+      id: invoice.patientId,
+      firstName: invoice.patientId === '1' ? 'Mario' : 'Giulia',
+      lastName: invoice.patientId === '1' ? 'Rossi' : 'Bianchi',
+      email: invoice.patientId === '1' ? 'mario.rossi@example.com' : 'giulia.bianchi@example.com',
+      fiscalCode: invoice.patientId === '1' ? 'RSSMRA80E15H501X' : 'BNCGLI92M62F205Y',
+    };
+
+    return {
+      ...invoice,
+      patient: mockPatient,
+    };
   }
 
   /**
    * Crea una nuova fattura
    */
   static async createInvoice(data: CreateInvoiceData): Promise<Invoice> {
-    // Genera automaticamente il numero fattura se non fornito
+    // Generate invoice number if not provided
     if (!data.invoiceNumber) {
-      const lastInvoice = await prisma.invoice.findFirst({
-        orderBy: { createdAt: 'desc' },
-        select: { invoiceNumber: true },
-      });
-
       const year = new Date().getFullYear();
-      let nextNumber = 1;
-
-      if (lastInvoice?.invoiceNumber) {
-        const match = lastInvoice.invoiceNumber.match(/(\d+)$/);
-        if (match) {
-          nextNumber = parseInt(match[1]) + 1;
-        }
-      }
-
-      data.invoiceNumber = `${year}-${nextNumber.toString().padStart(4, '0')}`;
+      const nextNumber = mockInvoices.length + 1;
+      data.invoiceNumber = `INV-${year}-${nextNumber.toString().padStart(3, '0')}`;
     }
 
-    return await prisma.invoice.create({
-      data,
-    });
+    const newInvoice: Invoice = {
+      id: Date.now().toString(),
+      ...data,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    mockInvoices.push(newInvoice);
+    return newInvoice;
   }
 
   /**
    * Aggiorna una fattura esistente
    */
   static async updateInvoice(id: string, data: UpdateInvoiceData): Promise<Invoice> {
-    return await prisma.invoice.update({
-      where: { id },
-      data,
-    });
+    const invoiceIndex = mockInvoices.findIndex(inv => inv.id === id);
+    if (invoiceIndex === -1) throw new Error('Invoice not found');
+    
+    mockInvoices[invoiceIndex] = {
+      ...mockInvoices[invoiceIndex],
+      ...data,
+      updatedAt: new Date(),
+    };
+    
+    return mockInvoices[invoiceIndex];
   }
 
   /**
    * Elimina una fattura
    */
   static async deleteInvoice(id: string): Promise<void> {
-    await prisma.invoice.delete({
-      where: { id },
-    });
+    const invoiceIndex = mockInvoices.findIndex(inv => inv.id === id);
+    if (invoiceIndex === -1) throw new Error('Invoice not found');
+    
+    mockInvoices.splice(invoiceIndex, 1);
   }
 
   /**
@@ -214,14 +228,18 @@ export class InvoiceService {
     paymentMethod: string, 
     paymentDate: Date = new Date()
   ): Promise<Invoice> {
-    return await prisma.invoice.update({
-      where: { id },
-      data: {
-        status: 'paid',
-        paymentMethod,
-        paymentDate,
-      },
-    });
+    const invoiceIndex = mockInvoices.findIndex(inv => inv.id === id);
+    if (invoiceIndex === -1) throw new Error('Invoice not found');
+    
+    mockInvoices[invoiceIndex] = {
+      ...mockInvoices[invoiceIndex],
+      status: 'paid',
+      paymentMethod,
+      paymentDate,
+      updatedAt: new Date(),
+    };
+    
+    return mockInvoices[invoiceIndex];
   }
 
   /**
@@ -232,52 +250,31 @@ export class InvoiceService {
     const startOfYear = new Date(currentYear, 0, 1);
     const endOfYear = new Date(currentYear, 11, 31, 23, 59, 59);
 
-    const [
-      totalInvoices,
-      paidInvoices,
-      overdueInvoices,
-      totalRevenue,
-      pendingRevenue,
-    ] = await Promise.all([
-      prisma.invoice.count({
-        where: {
-          issueDate: { gte: startOfYear, lte: endOfYear },
-        },
-      }),
-      prisma.invoice.count({
-        where: {
-          status: 'paid',
-          issueDate: { gte: startOfYear, lte: endOfYear },
-        },
-      }),
-      prisma.invoice.count({
-        where: {
-          status: { in: ['sent', 'overdue'] },
-          dueDate: { lt: new Date() },
-        },
-      }),
-      prisma.invoice.aggregate({
-        where: {
-          status: 'paid',
-          issueDate: { gte: startOfYear, lte: endOfYear },
-        },
-        _sum: { total: true },
-      }),
-      prisma.invoice.aggregate({
-        where: {
-          status: { in: ['draft', 'sent'] },
-          issueDate: { gte: startOfYear, lte: endOfYear },
-        },
-        _sum: { total: true },
-      }),
-    ]);
+    // Filter invoices by year
+    const yearInvoices = mockInvoices.filter(invoice => 
+      invoice.issueDate >= startOfYear && invoice.issueDate <= endOfYear
+    );
+
+    const totalInvoices = yearInvoices.length;
+    const paidInvoices = yearInvoices.filter(inv => inv.status === 'paid').length;
+    const overdueInvoices = mockInvoices.filter(inv => 
+      ['sent', 'overdue'].includes(inv.status) && inv.dueDate < new Date()
+    ).length;
+    
+    const totalRevenue = yearInvoices
+      .filter(inv => inv.status === 'paid')
+      .reduce((sum, inv) => sum + inv.total, 0);
+      
+    const pendingRevenue = yearInvoices
+      .filter(inv => ['draft', 'sent'].includes(inv.status))
+      .reduce((sum, inv) => sum + inv.total, 0);
 
     return {
       totalInvoices,
       paidInvoices,
       overdueInvoices,
-      totalRevenue: totalRevenue._sum.total || 0,
-      pendingRevenue: pendingRevenue._sum.total || 0,
+      totalRevenue,
+      pendingRevenue,
       paymentRate: totalInvoices > 0 ? (paidInvoices / totalInvoices) * 100 : 0,
     };
   }
@@ -288,28 +285,24 @@ export class InvoiceService {
   static async getUpcomingDueInvoices(days = 7): Promise<InvoiceWithPatient[]> {
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + days);
+    
+    const upcomingInvoices = mockInvoices.filter(invoice => 
+      invoice.status === 'sent' &&
+      invoice.dueDate >= new Date() &&
+      invoice.dueDate <= futureDate
+    );
 
-    return await prisma.invoice.findMany({
-      where: {
-        status: { in: ['sent'] },
-        dueDate: {
-          gte: new Date(),
-          lte: futureDate,
-        },
+    // Add mock patient data to each invoice
+    return upcomingInvoices.map(invoice => ({
+      ...invoice,
+      patient: {
+        id: invoice.patientId,
+        firstName: invoice.patientId === '1' ? 'Mario' : 'Giulia',
+        lastName: invoice.patientId === '1' ? 'Rossi' : 'Bianchi',
+        email: invoice.patientId === '1' ? 'mario.rossi@example.com' : 'giulia.bianchi@example.com',
+        fiscalCode: invoice.patientId === '1' ? 'RSSMRA80E15H501X' : 'BNCGLI92M62F205Y',
       },
-      include: {
-        patient: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            fiscalCode: true,
-          },
-        },
-      },
-      orderBy: { dueDate: 'asc' },
-    });
+    }));
   }
 }
 
