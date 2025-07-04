@@ -1,11 +1,11 @@
 /**
  * MOKO SOSTANZA Dental CRM - Patient Service
  * 
- * Servizio per la gestione dei pazienti utilizzando Prisma ORM
- * Sostituisce i dati mock con query reali al database PostgreSQL
+ * Servizio per la gestione dei pazienti
+ * Currently using mock data - will be connected to database later
  */
 
-import { prisma, type Patient, type Prisma } from '../db/client';
+import { type Patient } from '../db/client';
 
 // Tipi per le operazioni sui pazienti
 export type CreatePatientData = Omit<Patient, 'id' | 'createdAt' | 'updatedAt'>;
@@ -18,6 +18,50 @@ export interface PatientWithRelations extends Patient {
   patientUDIs?: any[];
   notifications?: any[];
 }
+
+// Mock data for development
+const mockPatients: Patient[] = [
+  {
+    id: '1',
+    firstName: 'Mario',
+    lastName: 'Rossi',
+    email: 'mario.rossi@example.com',
+    phone: '+39 333 1234567',
+    dateOfBirth: new Date('1980-05-15'),
+    fiscalCode: 'RSSMRA80E15H501X',
+    address: 'Via Roma 123',
+    city: 'Milano',
+    postalCode: '20100',
+    province: 'MI',
+    medicalHistory: 'Nessuna patologia rilevante',
+    allergies: 'Penicillina',
+    medications: 'Nessuna',
+    isSmoker: false,
+    anamnesis: 'Paziente collaborativo',
+    createdAt: new Date('2023-01-15'),
+    updatedAt: new Date('2023-01-15'),
+  },
+  {
+    id: '2',
+    firstName: 'Giulia',
+    lastName: 'Bianchi',
+    email: 'giulia.bianchi@example.com',
+    phone: '+39 333 7654321',
+    dateOfBirth: new Date('1992-08-22'),
+    fiscalCode: 'BNCGLI92M62F205Y',
+    address: 'Corso Venezia 45',
+    city: 'Milano',
+    postalCode: '20121',
+    province: 'MI',
+    medicalHistory: 'Diabete tipo 2',
+    allergies: null,
+    medications: 'Metformina',
+    isSmoker: false,
+    anamnesis: 'Controlli regolari',
+    createdAt: new Date('2023-02-10'),
+    updatedAt: new Date('2023-02-10'),
+  },
+];
 
 export interface PatientSearchFilters {
   search?: string;
@@ -53,211 +97,160 @@ export class PatientService {
       sortOrder = 'asc'
     } = pagination;
 
-    const skip = (page - 1) * limit;
+    // Mock implementation - filter and paginate mockPatients
+    let filteredPatients = [...mockPatients];
 
-    // Costruzione dei filtri per Prisma
-    const where: Prisma.PatientWhereInput = {};
-
+    // Apply search filter
     if (filters.search) {
-      where.OR = [
-        { firstName: { contains: filters.search, mode: 'insensitive' } },
-        { lastName: { contains: filters.search, mode: 'insensitive' } },
-        { email: { contains: filters.search, mode: 'insensitive' } },
-        { fiscalCode: { contains: filters.search, mode: 'insensitive' } },
-      ];
+      const searchTerm = filters.search.toLowerCase();
+      filteredPatients = filteredPatients.filter(patient =>
+        patient.firstName.toLowerCase().includes(searchTerm) ||
+        patient.lastName.toLowerCase().includes(searchTerm) ||
+        patient.email?.toLowerCase().includes(searchTerm) ||
+        patient.fiscalCode?.toLowerCase().includes(searchTerm)
+      );
     }
 
+    // Apply other filters
     if (filters.city) {
-      where.city = { contains: filters.city, mode: 'insensitive' };
+      filteredPatients = filteredPatients.filter(patient =>
+        patient.city?.toLowerCase().includes(filters.city!.toLowerCase())
+      );
     }
 
     if (filters.isSmoker !== undefined) {
-      where.isSmoker = filters.isSmoker;
+      filteredPatients = filteredPatients.filter(patient => patient.isSmoker === filters.isSmoker);
     }
 
     if (filters.hasAllergies !== undefined) {
-      if (filters.hasAllergies) {
-        where.allergies = { not: null };
-      } else {
-        where.allergies = null;
-      }
+      filteredPatients = filteredPatients.filter(patient => 
+        filters.hasAllergies ? patient.allergies !== null : patient.allergies === null
+      );
     }
 
-    if (filters.dateOfBirthFrom || filters.dateOfBirthTo) {
-      where.dateOfBirth = {};
-      if (filters.dateOfBirthFrom) {
-        where.dateOfBirth.gte = filters.dateOfBirthFrom;
-      }
-      if (filters.dateOfBirthTo) {
-        where.dateOfBirth.lte = filters.dateOfBirthTo;
-      }
-    }
-
-    // Esecuzione query con conteggio totale
-    const [patients, total] = await Promise.all([
-      prisma.patient.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { [sortBy]: sortOrder },
-        include: {
-          _count: {
-            select: {
-              appointments: true,
-              invoices: true,
-              files: true,
-            },
-          },
-        },
-      }),
-      prisma.patient.count({ where }),
-    ]);
+    // Apply pagination
+    const skip = (page - 1) * limit;
+    const paginatedPatients = filteredPatients.slice(skip, skip + limit);
 
     return {
-      patients,
+      patients: paginatedPatients,
       pagination: {
         page,
         limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-        hasNext: page * limit < total,
+        total: filteredPatients.length,
+        totalPages: Math.ceil(filteredPatients.length / limit),
+        hasNext: page * limit < filteredPatients.length,
         hasPrev: page > 1,
       },
     };
   }
 
   /**
-   * Recupera un paziente per ID con tutte le relazioni
+   * Recupera un paziente per ID
    */
   static async getPatientById(id: string, includeRelations = false): Promise<PatientWithRelations | null> {
-    const include = includeRelations ? {
-      appointments: {
-        orderBy: { startTime: 'desc' as const },
-        take: 10,
-      },
-      invoices: {
-        orderBy: { createdAt: 'desc' as const },
-        take: 10,
-      },
-      files: {
-        orderBy: { createdAt: 'desc' as const },
-        take: 20,
-      },
-      patientUDIs: {
-        include: { udi: true },
-        orderBy: { interventionDate: 'desc' as const },
-      },
-      notifications: {
-        where: { isArchived: false },
-        orderBy: { createdAt: 'desc' as const },
-        take: 5,
-      },
-    } : undefined;
+    const patient = mockPatients.find(p => p.id === id);
+    if (!patient) return null;
 
-    return await prisma.patient.findUnique({
-      where: { id },
-      include,
-    });
+    // Return patient with optional relations (mock empty arrays for now)
+    return {
+      ...patient,
+      ...(includeRelations && {
+        appointments: [],
+        invoices: [],
+        files: [],
+        patientUDIs: [],
+        notifications: [],
+      }),
+    };
   }
 
   /**
    * Crea un nuovo paziente
    */
   static async createPatient(data: CreatePatientData): Promise<Patient> {
-    return await prisma.patient.create({
-      data,
-    });
+    const newPatient: Patient = {
+      id: Date.now().toString(),
+      ...data,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    mockPatients.push(newPatient);
+    return newPatient;
   }
 
   /**
    * Aggiorna un paziente esistente
    */
   static async updatePatient(id: string, data: UpdatePatientData): Promise<Patient> {
-    return await prisma.patient.update({
-      where: { id },
-      data,
-    });
+    const patientIndex = mockPatients.findIndex(p => p.id === id);
+    if (patientIndex === -1) throw new Error('Patient not found');
+    
+    mockPatients[patientIndex] = {
+      ...mockPatients[patientIndex],
+      ...data,
+      updatedAt: new Date(),
+    };
+    
+    return mockPatients[patientIndex];
   }
 
   /**
-   * Elimina un paziente (soft delete - mantiene i dati per compliance)
+   * Elimina un paziente
    */
   static async deletePatient(id: string): Promise<void> {
-    // In un sistema reale, potresti voler implementare un soft delete
-    // aggiungendo un campo 'deletedAt' invece di eliminare fisicamente
-    await prisma.patient.delete({
-      where: { id },
-    });
+    const patientIndex = mockPatients.findIndex(p => p.id === id);
+    if (patientIndex === -1) throw new Error('Patient not found');
+    
+    mockPatients.splice(patientIndex, 1);
   }
 
   /**
    * Cerca pazienti per nome, email o codice fiscale
    */
   static async searchPatients(query: string, limit = 10): Promise<Patient[]> {
-    return await prisma.patient.findMany({
-      where: {
-        OR: [
-          { firstName: { contains: query, mode: 'insensitive' } },
-          { lastName: { contains: query, mode: 'insensitive' } },
-          { email: { contains: query, mode: 'insensitive' } },
-          { fiscalCode: { contains: query, mode: 'insensitive' } },
-        ],
-      },
-      take: limit,
-      orderBy: [
-        { lastName: 'asc' },
-        { firstName: 'asc' },
-      ],
-    });
+    const searchTerm = query.toLowerCase();
+    return mockPatients
+      .filter(patient =>
+        patient.firstName.toLowerCase().includes(searchTerm) ||
+        patient.lastName.toLowerCase().includes(searchTerm) ||
+        patient.email?.toLowerCase().includes(searchTerm) ||
+        patient.fiscalCode?.toLowerCase().includes(searchTerm)
+      )
+      .slice(0, limit);
   }
 
   /**
    * Verifica se un email è già in uso
    */
   static async isEmailTaken(email: string, excludeId?: string): Promise<boolean> {
-    const where: Prisma.PatientWhereInput = { email };
-    if (excludeId) {
-      where.id = { not: excludeId };
-    }
-
-    const count = await prisma.patient.count({ where });
-    return count > 0;
+    return mockPatients.some(patient => 
+      patient.email === email && patient.id !== excludeId
+    );
   }
 
   /**
    * Verifica se un codice fiscale è già in uso
    */
   static async isFiscalCodeTaken(fiscalCode: string, excludeId?: string): Promise<boolean> {
-    const where: Prisma.PatientWhereInput = { fiscalCode };
-    if (excludeId) {
-      where.id = { not: excludeId };
-    }
-
-    const count = await prisma.patient.count({ where });
-    return count > 0;
+    return mockPatients.some(patient => 
+      patient.fiscalCode === fiscalCode && patient.id !== excludeId
+    );
   }
 
   /**
    * Ottieni statistiche sui pazienti
    */
   static async getPatientStats() {
-    const [
-      totalPatients,
-      newPatientsThisMonth,
-      smokersCount,
-      patientsWithAllergies,
-    ] = await Promise.all([
-      prisma.patient.count(),
-      prisma.patient.count({
-        where: {
-          createdAt: {
-            gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
-          },
-        },
-      }),
-      prisma.patient.count({ where: { isSmoker: true } }),
-      prisma.patient.count({ where: { allergies: { not: null } } }),
-    ]);
+    const totalPatients = mockPatients.length;
+    const smokersCount = mockPatients.filter(p => p.isSmoker).length;
+    const patientsWithAllergies = mockPatients.filter(p => p.allergies !== null).length;
+    
+    const currentMonth = new Date().getMonth();
+    const currentYear = new Date().getFullYear();
+    const newPatientsThisMonth = mockPatients.filter(p => 
+      p.createdAt.getMonth() === currentMonth && p.createdAt.getFullYear() === currentYear
+    ).length;
 
     return {
       totalPatients,

@@ -1,11 +1,11 @@
 /**
  * MOKO SOSTANZA Dental CRM - Invoice Service
  * 
- * Servizio per la gestione delle fatture utilizzando Prisma ORM
- * Sostituisce i dati mock con query reali al database PostgreSQL
+ * Servizio per la gestione delle fatture
+ * Currently using mock data - will be connected to database later
  */
 
-import { prisma, type Invoice, type Prisma } from '../db/client';
+import { type Invoice } from '../db/client';
 
 // Tipi per le operazioni sulle fatture
 export type CreateInvoiceData = Omit<Invoice, 'id' | 'createdAt' | 'updatedAt'>;

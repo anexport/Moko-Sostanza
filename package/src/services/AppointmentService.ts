@@ -1,11 +1,11 @@
 /**
  * MOKO SOSTANZA Dental CRM - Appointment Service
  *
- * Servizio per la gestione degli appuntamenti utilizzando Prisma ORM
- * Sostituisce i dati mock con query reali al database PostgreSQL
+ * Servizio per la gestione degli appuntamenti
+ * Currently using mock data - will be connected to database later
  */
 
-import { prisma, type Appointment, type Prisma } from '../db/client';
+import { type Appointment } from '../db/client';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
