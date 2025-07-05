@@ -1,79 +1,54 @@
-import { Table, Badge, Button, TextInput } from "flowbite-react";
+import { Table, Badge, Button, TextInput, Spinner } from "flowbite-react";
 import { Icon } from "@iconify/react";
 import SimpleBar from "simplebar-react";
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { HiSearch } from "react-icons/hi";
 import PageContainer from '../../components/container/PageContainer';
+import { PatientService, type Patient } from '../../services/PatientService';
 
-const PatientsData = [
-  {
-    id: 1,
-    name: "Mario Rossi",
-    phone: "+39 333 1234567",
-    email: "mario.rossi@example.com",
-    lastVisit: "15/05/2023",
-    nextAppointment: "22/06/2023",
-    status: "Attivo"
-  },
-  {
-    id: 2,
-    name: "Giulia Bianchi",
-    phone: "+39 333 7654321",
-    email: "giulia.bianchi@example.com",
-    lastVisit: "03/04/2023",
-    nextAppointment: "18/06/2023",
-    status: "Attivo"
-  },
-  {
-    id: 3,
-    name: "Luca Verdi",
-    phone: "+39 333 9876543",
-    email: "luca.verdi@example.com",
-    lastVisit: "22/03/2023",
-    nextAppointment: "Non programmato",
-    status: "Inattivo"
-  },
-  {
-    id: 4,
-    name: "Sofia Neri",
-    phone: "+39 333 3456789",
-    email: "sofia.neri@example.com",
-    lastVisit: "10/05/2023",
-    nextAppointment: "25/06/2023",
-    status: "Attivo"
-  },
-  {
-    id: 5,
-    name: "Marco Gialli",
-    phone: "+39 333 6789012",
-    email: "marco.gialli@example.com",
-    lastVisit: "01/02/2023",
-    nextAppointment: "Non programmato",
-    status: "Inattivo"
-  }
-];
 
 const Patients = () => {
   const location = useLocation();
   const [searchTerm, setSearchTerm] = useState("");
-  const [filteredPatients, setFilteredPatients] = useState(PatientsData);
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Filtra i pazienti in base al termine di ricerca
-  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const term = e.target.value;
-    setSearchTerm(term);
-
-    if (term.trim() === "") {
-      setFilteredPatients(PatientsData);
-    } else {
-      const filtered = PatientsData.filter(patient =>
-        patient.name.toLowerCase().includes(term.toLowerCase()) ||
-        patient.email.toLowerCase().includes(term.toLowerCase()) ||
-        patient.phone.includes(term)
+  // Load patients from database
+  const loadPatients = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const result = await PatientService.getPatients(
+        { search: searchTerm || undefined },
+        { limit: 50 }
       );
-      setFilteredPatients(filtered);
+      setPatients(result.patients);
+    } catch (err) {
+      console.error('Error loading patients:', err);
+      setError('Errore nel caricamento dei pazienti');
+    } finally {
+      setLoading(false);
     }
+  };
+
+  // Load patients on component mount
+  useEffect(() => {
+    loadPatients();
+  }, []);
+
+  // Handle search with debounce
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      loadPatients();
+    }, 500);
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm]);
+
+  // Handle search input
+  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(e.target.value);
   };
 
   // Verifica se siamo nella pagina di ricerca
@@ -124,13 +99,28 @@ const Patients = () => {
               <Table.HeadCell className="p-4">Azioni</Table.HeadCell>
             </Table.Head>
             <Table.Body className="divide-y divide-border dark:divide-darkborder">
-              {filteredPatients.length > 0 ? (
-                filteredPatients.map((patient) => (
+              {loading ? (
+                <Table.Row>
+                  <Table.Cell colSpan={7} className="text-center py-8">
+                    <div className="flex justify-center items-center gap-2">
+                      <Spinner size="sm" />
+                      <span>Caricamento pazienti...</span>
+                    </div>
+                  </Table.Cell>
+                </Table.Row>
+              ) : error ? (
+                <Table.Row>
+                  <Table.Cell colSpan={7} className="text-center py-4">
+                    <p className="text-red-500">{error}</p>
+                  </Table.Cell>
+                </Table.Row>
+              ) : patients.length > 0 ? (
+                patients.map((patient) => (
                 <Table.Row key={patient.id}>
                   <Table.Cell className="p-4">
                     <div className="flex gap-2 items-center">
                       <div>
-                        <h6 className="text-sm font-medium">{patient.name}</h6>
+                        <h6 className="text-sm font-medium">{patient.first_name} {patient.last_name}</h6>
                       </div>
                     </div>
                   </Table.Cell>
@@ -138,17 +128,17 @@ const Patients = () => {
                     <p className="text-sm">{patient.phone}</p>
                   </Table.Cell>
                   <Table.Cell className="p-4 hidden md:table-cell">
-                    <p className="text-sm">{patient.email}</p>
+                    <p className="text-sm">{patient.email || 'N/A'}</p>
                   </Table.Cell>
                   <Table.Cell className="p-4 hidden lg:table-cell">
-                    <p className="text-sm">{patient.lastVisit}</p>
+                    <p className="text-sm">N/A</p>
                   </Table.Cell>
                   <Table.Cell className="p-4 hidden xl:table-cell">
-                    <p className="text-sm">{patient.nextAppointment}</p>
+                    <p className="text-sm">N/A</p>
                   </Table.Cell>
                   <Table.Cell className="p-4">
-                    <Badge className={patient.status === "Attivo" ? "bg-lightsuccess text-success" : "bg-lighterror text-error"}>
-                      {patient.status}
+                    <Badge className="bg-lightsuccess text-success">
+                      Attivo
                     </Badge>
                   </Table.Cell>
                   <Table.Cell className="p-4">
@@ -162,14 +152,14 @@ const Patients = () => {
                       </div>
                     </Table.Cell>
                   </Table.Row>
-                  ))
-                ) : (
-                  <Table.Row>
-                    <Table.Cell colSpan={7} className="text-center py-4">
-                      <p className="text-gray-500">Nessun paziente trovato</p>
-                    </Table.Cell>
-                  </Table.Row>
-                )}
+                ))
+              ) : (
+                <Table.Row>
+                  <Table.Cell colSpan={7} className="text-center py-4">
+                    <p className="text-gray-500">Nessun paziente trovato</p>
+                  </Table.Cell>
+                </Table.Row>
+              )}
               </Table.Body>
             </Table>
           </div>

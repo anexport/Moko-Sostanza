@@ -11,6 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.50.3",
     "@svgr/rollup": "8.1.0",
     "@tabler/icons-react": "^2.39.0",
     "aos": "^2.3.4",
@@ -59,6 +60,7 @@
     "eslint": "latest",
     "eslint-config-next": "latest",
     "postcss": "^8.4.49",
+    "supabase": "^2.30.4",
     "tailwindcss": "^3.4.16",
     "tsx": "^4.20.3",
     "typescript": "^5.3.3",
