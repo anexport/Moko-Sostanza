@@ -9,7 +9,7 @@ import {
   getAppointmentColor
 } from "../../services/AppointmentService";
 import { DoctorService } from "../../services/DoctorService";
-import { useReminderStore } from "../../services/ReminderService";
+// ReminderModal handles its own reminder service imports
 import AppointmentModal from "../../components/appointments/AppointmentModal";
 import DayAppointmentsModal from "../../components/appointments/DayAppointmentsModal";
 import ReminderModal from "../../components/reminders/ReminderModal";

@@ -3,8 +3,8 @@ import { Icon } from "@iconify/react";
 import { Link, useNavigate } from "react-router-dom";
 import SimpleBar from "simplebar-react";
 import 'simplebar-react/dist/simplebar.min.css';
-import { useState } from "react";
-import { useReminderStore, getRelativeDate } from "../../../services/ReminderService";
+import { useState, useEffect } from "react";
+import { ReminderService, getRelativeDate, type Reminder } from "../../../services/ReminderService";
 import ReminderModal from "../../../components/reminders/ReminderModal";
 
 // Dati di esempio per gli appuntamenti recenti
@@ -50,11 +50,26 @@ const getStatusColor = (status: string) => {
 };
 
 const MobileRightSidebar = ({ onClose }: { onClose: () => void }) => {
-  const { getUpcomingReminders, toggleCompleted } = useReminderStore();
   const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
+  const [upcomingReminders, setUpcomingReminders] = useState<Reminder[]>([]);
+  const [remindersLoading, setRemindersLoading] = useState(true);
 
-  // Ottieni i promemoria imminenti
-  const upcomingReminders = getUpcomingReminders(3);
+  // Carica i promemoria imminenti
+  useEffect(() => {
+    const loadUpcomingReminders = async () => {
+      try {
+        setRemindersLoading(true);
+        const reminders = await ReminderService.getUpcomingReminders(3);
+        setUpcomingReminders(reminders);
+      } catch (error) {
+        console.error('Errore nel caricamento dei promemoria:', error);
+      } finally {
+        setRemindersLoading(false);
+      }
+    };
+
+    loadUpcomingReminders();
+  }, []);
 
   // Apri il modale per creare un nuovo promemoria
   const openReminderModal = () => {
@@ -66,10 +81,27 @@ const MobileRightSidebar = ({ onClose }: { onClose: () => void }) => {
     setIsReminderModalOpen(false);
   };
 
+  // Ricarica i promemoria dopo il salvataggio
+  const handleReminderSave = async () => {
+    try {
+      const reminders = await ReminderService.getUpcomingReminders(3);
+      setUpcomingReminders(reminders);
+    } catch (error) {
+      console.error('Errore nel ricaricamento dei promemoria:', error);
+    }
+  };
+
   // Gestisci il completamento di un promemoria
-  const handleToggleCompleted = (id: number, e: React.MouseEvent) => {
+  const handleToggleCompleted = async (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    toggleCompleted(id);
+    try {
+      await ReminderService.toggleCompleted(id);
+      // Ricarica i promemoria dopo il completamento
+      const reminders = await ReminderService.getUpcomingReminders(3);
+      setUpcomingReminders(reminders);
+    } catch (error) {
+      console.error('Errore nel completamento del promemoria:', error);
+    }
   };
 
   return (
@@ -197,7 +229,11 @@ const MobileRightSidebar = ({ onClose }: { onClose: () => void }) => {
                 <Icon icon="solar:arrow-right-linear" className="ml-auto" height={14} />
               </h6>
               <div className="space-y-2">
-                {upcomingReminders.length > 0 ? (
+                {remindersLoading ? (
+                  <div className="text-xs text-gray-500 text-center p-2">
+                    Caricamento...
+                  </div>
+                ) : upcomingReminders.length > 0 ? (
                   upcomingReminders.map((reminder) => (
                     <Link
                       to="/calendar"
@@ -267,6 +303,7 @@ const MobileRightSidebar = ({ onClose }: { onClose: () => void }) => {
       <ReminderModal
         isOpen={isReminderModalOpen}
         onClose={closeReminderModal}
+        onSave={handleReminderSave}
       />
     </div>
   );

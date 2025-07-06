@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Modal, Button, Label, TextInput, Textarea } from 'flowbite-react';
-import { useReminderStore, Reminder } from '../../services/ReminderService';
+import { ReminderService, Reminder } from '../../services/ReminderService';
 
 interface ReminderModalProps {
   isOpen: boolean;
@@ -8,6 +8,7 @@ interface ReminderModalProps {
   reminder?: Reminder;
   selectedDate?: string;
   selectedTime?: string;
+  onSave?: () => void; // Callback per refreshare i dati
 }
 
 const ReminderModal = ({ 
@@ -15,16 +16,18 @@ const ReminderModal = ({
   onClose, 
   reminder, 
   selectedDate, 
-  selectedTime 
+  selectedTime,
+  onSave 
 }: ReminderModalProps) => {
-  const { addReminder, updateReminder } = useReminderStore();
-  
   const [formData, setFormData] = useState({
     date: '',
     time: '',
     title: '',
     text: ''
   });
+  
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   
   // Inizializza il form quando si apre il modale
   useEffect(() => {
@@ -58,18 +61,28 @@ const ReminderModal = ({
   };
   
   // Gestisce l'invio del form
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsLoading(true);
+    setError(null);
     
-    if (reminder) {
-      // Aggiorna un promemoria esistente
-      updateReminder(reminder.id, formData);
-    } else {
-      // Crea un nuovo promemoria
-      addReminder(formData);
+    try {
+      if (reminder) {
+        // Aggiorna un promemoria esistente
+        await ReminderService.updateReminder(reminder.id, formData);
+      } else {
+        // Crea un nuovo promemoria
+        await ReminderService.createReminder(formData);
+      }
+      
+      onSave?.(); // Ricarica i dati
+      onClose();
+    } catch (err) {
+      console.error('Error saving reminder:', err);
+      setError(err instanceof Error ? err.message : 'Errore durante il salvataggio');
+    } finally {
+      setIsLoading(false);
     }
-    
-    onClose();
   };
   
   return (
@@ -78,6 +91,12 @@ const ReminderModal = ({
         {reminder ? 'Modifica Promemoria' : 'Nuovo Promemoria'}
       </Modal.Header>
       <Modal.Body>
+        {error && (
+          <div className="mb-4 p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">
+            {error}
+          </div>
+        )}
+        
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -131,11 +150,11 @@ const ReminderModal = ({
           </div>
           
           <div className="flex justify-end gap-4 mt-6">
-            <Button color="light" onClick={onClose}>
+            <Button color="light" onClick={onClose} disabled={isLoading}>
               Annulla
             </Button>
-            <Button type="submit" color="primary">
-              {reminder ? 'Aggiorna' : 'Salva'}
+            <Button type="submit" color="primary" disabled={isLoading}>
+              {isLoading ? 'Salvataggio...' : reminder ? 'Aggiorna' : 'Salva'}
             </Button>
           </div>
         </form>
