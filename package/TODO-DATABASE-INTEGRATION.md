@@ -104,11 +104,13 @@
   - **Complexity**: Medium
   - **Dependencies**: All service updates (InvoiceService ✅ ready)
 
-- [ ] **Appointments.tsx** - UPDATE FOR NEW SERVICE
-  - **Current**: Uses old AppointmentService store
-  - **Target**: Use new database-backed AppointmentService
-  - **Changes**: Update all service calls and data handling
-  - **Complexity**: Medium
+- ✅ **Appointments.tsx** - COMPLETE DATABASE INTEGRATION ✅
+  - **Status**: Fixed to use AppointmentWithDetails type properly
+  - **Changes**: 
+    - ✅ Removed references to non-existent mock data helper functions
+    - ✅ Fixed property names (startTime → start_time, endTime → end_time)
+    - ✅ Updated to use nested patient/doctor/treatment objects
+    - ✅ Fixed patient name display (first_name + last_name)
   - **Dependencies**: AppointmentService.ts ✅, DoctorService.ts ✅, TreatmentService.ts ✅
 
 - ✅ **Billing.tsx** - COMPLETE DATABASE INTEGRATION ✅
@@ -190,7 +192,15 @@
 ## 📝 PHASE 7: FORM COMPONENTS REVIEW
 
 Review all form components to ensure they work with the new database schema:
-- [ ] **PatientForm.tsx** - Verify field mappings
+- ✅ **PatientForm.tsx** - COMPLETE DATABASE INTEGRATION ✅
+  - **Status**: Fixed to properly save patients to Supabase database
+  - **Changes**:
+    - ✅ Added PatientService integration
+    - ✅ Fixed form data structure to match database schema
+    - ✅ Added proper error handling and loading states
+    - ✅ Split name into first_name and last_name
+    - ✅ Used correct field names (date_of_birth, fiscal_code, etc.)
+  - **Result**: "Nuovo Paziente" now properly saves to database
 - [ ] **TreatmentForm.tsx** - Update for TreatmentService
 - [ ] **InvoiceForm.tsx** - Update for InvoiceService
 - [ ] **MedicalDeviceForm.tsx** - Update for DentalProcedureService
@@ -272,9 +282,21 @@ Review all form components to ensure they work with the new database schema:
   - Invoices: 2 test invoices working in Billing view (from `invoices` table)
   - Appointments: Real upcoming appointments in RightSidebar and Calendar
 
+### ✅ Recent Fixes (COMPLETED)
+- ✅ **Appointments.tsx Mock Data Removal** - Removed all references to mock data helper functions
+- ✅ **PatientForm.tsx Database Integration** - New patients now save to Supabase database
+- ✅ **Database Schema Compliance** - All components now use correct field names (snake_case)
+- ✅ **AppointmentWithDetails Integration** - Proper use of nested patient/doctor/treatment objects
+
 ---
 
 **Next Action**: Continue Phase 2 - Convert ReminderService from Zustand to Supabase, then create ProductService
+
+**Recent Completed Work**:
+- ✅ Fixed Appointments.tsx to use real Supabase data instead of mock helper functions
+- ✅ Fixed PatientForm.tsx to save new patients to database ("Nuovo Paziente" functionality)
+- ✅ Verified all database field mappings are correct (snake_case compliance)
+- ✅ Confirmed AppointmentWithDetails type is properly implemented
 
 ---
 

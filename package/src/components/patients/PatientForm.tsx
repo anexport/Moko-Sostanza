@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Button, Label, TextInput, Select, Textarea } from 'flowbite-react';
 import { useNavigate } from 'react-router-dom';
+import { PatientService } from '../../services/PatientService';
 
 interface PatientFormProps {
   isEdit?: boolean;
@@ -24,6 +25,8 @@ interface PatientFormProps {
 
 const PatientForm = ({ isEdit = false, patientData }: PatientFormProps) => {
   const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const [formData, setFormData] = useState({
     name: patientData?.name || '',
@@ -58,18 +61,60 @@ const PatientForm = ({ isEdit = false, patientData }: PatientFormProps) => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoading(true);
+    setError('');
 
-    // Qui andrebbe la logica per salvare il paziente
-    console.log('Dati paziente:', formData);
+    try {
+      // Parse name into first_name and last_name
+      const nameParts = formData.name.trim().split(' ');
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.slice(1).join(' ') || '';
 
-    // Reindirizza alla lista pazienti dopo il salvataggio
-    navigate('/patients');
+      // Create patient data object matching database schema
+      const newPatientData = {
+        first_name: firstName,
+        last_name: lastName,
+        phone: formData.phone,
+        email: formData.email || null,
+        date_of_birth: formData.birthdate,
+        fiscal_code: formData.fiscalCode || null,
+        address: formData.address,
+        city: '', // TODO: Parse from address or add separate field
+        postal_code: '', // TODO: Parse from address or add separate field
+        province: '', // TODO: Parse from address or add separate field
+        medical_history: formData.medicalHistory,
+        allergies: null, // TODO: Add allergies field to form
+        medications: formData.medications || null,
+        is_smoker: formData.isSmoker,
+        anamnesis: formData.anamnesis
+      };
+
+      if (isEdit && patientData?.id) {
+        // Update existing patient
+        await PatientService.updatePatient(patientData.id.toString(), newPatientData);
+      } else {
+        // Create new patient
+        await PatientService.createPatient(newPatientData);
+      }
+
+      // Redirect to patients list after successful save
+      navigate('/patients');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Errore nel salvataggio del paziente');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <form className="space-y-4" onSubmit={handleSubmit}>
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+          {error}
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <div className="mb-2 block">
@@ -264,8 +309,8 @@ const PatientForm = ({ isEdit = false, patientData }: PatientFormProps) => {
         <Button color="light" onClick={() => navigate('/patients')}>
           Annulla
         </Button>
-        <Button type="submit" color="primary">
-          {isEdit ? 'Aggiorna' : 'Salva'}
+        <Button type="submit" color="primary" disabled={loading}>
+          {loading ? 'Salvataggio...' : (isEdit ? 'Aggiorna' : 'Salva')}
         </Button>
       </div>
     </form>

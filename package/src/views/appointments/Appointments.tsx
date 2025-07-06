@@ -93,7 +93,7 @@ const Appointments = () => {
       if (a.date !== b.date) {
         return a.date.localeCompare(b.date);
       }
-      return a.startTime.localeCompare(b.startTime);
+      return a.start_time.localeCompare(b.start_time);
     });
 
     setFilteredAppointments(filtered);
@@ -208,9 +208,9 @@ const Appointments = () => {
             <Table.Body className="divide-y divide-border dark:divide-darkborder">
               {filteredAppointments.length > 0 ? (
                 filteredAppointments.map((appointment) => {
-                  const patient = getPatientById(appointment.patientId);
-                  const doctor = getDoctorById(appointment.doctorId);
-                  const treatment = getTreatmentById(appointment.treatmentId);
+                  const patient = appointment.patient;
+                  const doctor = appointment.doctor;
+                  const treatment = appointment.treatment;
 
                   if (!patient || !doctor || !treatment) return null;
 
@@ -219,7 +219,7 @@ const Appointments = () => {
                       <Table.Cell className="p-4">
                         <div className="flex gap-2 items-center">
                           <div>
-                            <h6 className="text-sm font-medium">{patient.name}</h6>
+                            <h6 className="text-sm font-medium">{patient.first_name} {patient.last_name}</h6>
                           </div>
                         </div>
                       </Table.Cell>
@@ -227,7 +227,7 @@ const Appointments = () => {
                         <p className="text-sm">{formatDate(appointment.date)}</p>
                       </Table.Cell>
                       <Table.Cell className="p-4">
-                        <p className="text-sm">{appointment.startTime} - {appointment.endTime}</p>
+                        <p className="text-sm">{appointment.start_time} - {appointment.end_time}</p>
                       </Table.Cell>
                       <Table.Cell className="p-4 hidden md:table-cell">
                         <p className="text-sm">{doctor.name}</p>
