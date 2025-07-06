@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Modal, Button, Label, TextInput, Select, Textarea } from 'flowbite-react';
 import { Icon } from '@iconify/react';
-import { useAppointmentStore, Appointment } from '../../services/AppointmentService';
+import { AppointmentService, type Appointment, type Patient, type Doctor, type Treatment } from '../../services/AppointmentService';
+import { PatientService } from '../../services/PatientService';
+import { DoctorService } from '../../services/DoctorService';
+import { TreatmentService } from '../../services/TreatmentService';
 import QuickPatientModal from '../patients/QuickPatientModal';
 
 interface AppointmentModalProps {
@@ -13,18 +16,14 @@ interface AppointmentModalProps {
 }
 
 const AppointmentModal = ({ isOpen, onClose, appointment, selectedDate, selectedTime }: AppointmentModalProps) => {
-  const {
-    patients,
-    doctors,
-    treatments,
-    addAppointment,
-    updateAppointment
-  } = useAppointmentStore();
-
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [treatments, setTreatments] = useState<Treatment[]>([]);
+  const [loading, setLoading] = useState(false);
   const [isQuickPatientModalOpen, setIsQuickPatientModalOpen] = useState(false);
 
   const [formData, setFormData] = useState({
-    patientId: 0,
+    patientId: '',
     doctorId: 0,
     treatmentId: 0,
     date: '',
@@ -33,6 +32,32 @@ const AppointmentModal = ({ isOpen, onClose, appointment, selectedDate, selected
     status: 'confermato' as Appointment['status'],
     notes: ''
   });
+
+  // Load data when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      loadData();
+    }
+  }, [isOpen]);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [patientsResult, doctorsResult, treatmentsResult] = await Promise.all([
+        PatientService.getPatients(),
+        DoctorService.getDoctors(),
+        TreatmentService.getTreatments()
+      ]);
+      
+      setPatients(patientsResult.patients || []);
+      setDoctors(doctorsResult.doctors || []);
+      setTreatments(treatmentsResult.treatments || []);
+    } catch (error) {
+      console.error('Error loading data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Calcola l'ora di fine in base al trattamento selezionato
   const calculateEndTime = (startTime: string, treatmentId: number) => {
@@ -56,19 +81,19 @@ const AppointmentModal = ({ isOpen, onClose, appointment, selectedDate, selected
     if (appointment) {
       // Modifica di un appuntamento esistente
       setFormData({
-        patientId: appointment.patientId,
-        doctorId: appointment.doctorId,
-        treatmentId: appointment.treatmentId,
+        patientId: appointment.patient_id,
+        doctorId: appointment.doctor_id,
+        treatmentId: appointment.treatment_id,
         date: appointment.date,
-        startTime: appointment.startTime,
-        endTime: appointment.endTime,
+        startTime: appointment.start_time,
+        endTime: appointment.end_time,
         status: appointment.status,
         notes: appointment.notes || ''
       });
     } else {
       // Nuovo appuntamento
       setFormData({
-        patientId: patients.length > 0 ? patients[0].id : 0,
+        patientId: patients.length > 0 ? patients[0].id : '',
         doctorId: doctors.length > 0 ? doctors[0].id : 0,
         treatmentId: treatments.length > 0 ? treatments[0].id : 0,
         date: selectedDate || new Date().toISOString().split('T')[0],
@@ -104,23 +129,52 @@ const AppointmentModal = ({ isOpen, onClose, appointment, selectedDate, selected
   };
 
   // Gestisce l'aggiunta di un nuovo paziente
-  const handlePatientAdded = (patientId: number) => {
-    // Aggiorna il form con il nuovo paziente selezionato
-    setFormData(prev => ({ ...prev, patientId }));
+  const handlePatientAdded = async (patientId: string) => {
+    // Ricarica la lista dei pazienti per includere il nuovo paziente
+    try {
+      const patientsResult = await PatientService.getPatients();
+      setPatients(patientsResult.patients || []);
+      
+      // Aggiorna il form con il nuovo paziente selezionato
+      setFormData(prev => ({ ...prev, patientId }));
+    } catch (error) {
+      console.error('Error reloading patients:', error);
+      // Anche se c'è un errore nel ricaricare, aggiorna comunque il form
+      setFormData(prev => ({ ...prev, patientId }));
+    }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (appointment) {
-      // Aggiorna un appuntamento esistente
-      updateAppointment(appointment.id, formData);
-    } else {
-      // Crea un nuovo appuntamento
-      addAppointment(formData);
-    }
+    try {
+      setLoading(true);
+      
+      const appointmentData = {
+        patient_id: formData.patientId,
+        doctor_id: formData.doctorId,
+        treatment_id: formData.treatmentId,
+        date: formData.date,
+        start_time: formData.startTime,
+        end_time: formData.endTime,
+        status: formData.status,
+        notes: formData.notes
+      };
 
-    onClose();
+      if (appointment) {
+        // Aggiorna un appuntamento esistente
+        await AppointmentService.updateAppointment(appointment.id, appointmentData);
+      } else {
+        // Crea un nuovo appuntamento
+        await AppointmentService.createAppointment(appointmentData);
+      }
+
+      onClose();
+    } catch (error) {
+      console.error('Error saving appointment:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -153,7 +207,7 @@ const AppointmentModal = ({ isOpen, onClose, appointment, selectedDate, selected
               <option value="">Seleziona un paziente</option>
               {patients.map(patient => (
                 <option key={patient.id} value={patient.id}>
-                  {patient.name}
+                  {patient.first_name} {patient.last_name}
                 </option>
               ))}
             </Select>

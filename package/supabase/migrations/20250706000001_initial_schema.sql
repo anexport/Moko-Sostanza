@@ -1,5 +1,5 @@
--- 🏥 MOKO SOSTANZA Dental CRM - Complete Database Setup
--- This file creates all tables, indexes, functions, and sample data
+-- 🏥 MOKO SOSTANZA Dental CRM - Initial Database Schema
+-- Migration file to create all tables and functions
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -53,9 +53,9 @@ CREATE TABLE IF NOT EXISTS public.treatments (
 -- Create appointments table
 CREATE TABLE IF NOT EXISTS public.appointments (
     id SERIAL PRIMARY KEY,
-    patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-    doctor_id INTEGER NOT NULL REFERENCES doctors(id) ON DELETE CASCADE,
-    treatment_id INTEGER NOT NULL REFERENCES treatments(id) ON DELETE CASCADE,
+    patient_id UUID NOT NULL REFERENCES public.patients(id) ON DELETE CASCADE,
+    doctor_id INTEGER NOT NULL REFERENCES public.doctors(id) ON DELETE CASCADE,
+    treatment_id INTEGER NOT NULL REFERENCES public.treatments(id) ON DELETE CASCADE,
     date DATE NOT NULL,
     start_time TIME NOT NULL,
     end_time TIME NOT NULL,
@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS public.invoices (
     status VARCHAR(20) DEFAULT 'draft' CHECK (status IN ('draft', 'sent', 'paid', 'overdue')),
     payment_method VARCHAR(50),
     payment_date DATE,
-    patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    patient_id UUID NOT NULL REFERENCES public.patients(id) ON DELETE CASCADE,
     description TEXT NOT NULL,
     notes TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
@@ -88,7 +88,7 @@ CREATE TABLE IF NOT EXISTS public.invoices (
 -- Create dental_procedures table
 CREATE TABLE IF NOT EXISTS public.dental_procedures (
     id SERIAL PRIMARY KEY,
-    patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    patient_id UUID NOT NULL REFERENCES public.patients(id) ON DELETE CASCADE,
     date DATE NOT NULL,
     type VARCHAR(20) NOT NULL CHECK (type IN ('surgical', 'non-surgical')),
     procedure_type VARCHAR(255), -- for surgical procedures
@@ -102,7 +102,7 @@ CREATE TABLE IF NOT EXISTS public.dental_procedures (
 -- Create medical_devices table
 CREATE TABLE IF NOT EXISTS public.medical_devices (
     id SERIAL PRIMARY KEY,
-    procedure_id INTEGER NOT NULL REFERENCES dental_procedures(id) ON DELETE CASCADE,
+    procedure_id INTEGER NOT NULL REFERENCES public.dental_procedures(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     use_date DATE NOT NULL,
     udi_code VARCHAR(255), -- UDI compliance
@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS public.medical_devices (
 -- Create patient_events table
 CREATE TABLE IF NOT EXISTS public.patient_events (
     id SERIAL PRIMARY KEY,
-    patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    patient_id UUID NOT NULL REFERENCES public.patients(id) ON DELETE CASCADE,
     date DATE NOT NULL,
     time TIME NOT NULL,
     type VARCHAR(20) NOT NULL CHECK (type IN ('visita', 'prescrizione', 'analisi', 'nota', 'altro')),
@@ -127,7 +127,7 @@ CREATE TABLE IF NOT EXISTS public.patient_events (
 -- Create event_attachments table
 CREATE TABLE IF NOT EXISTS public.event_attachments (
     id SERIAL PRIMARY KEY,
-    event_id INTEGER NOT NULL REFERENCES patient_events(id) ON DELETE CASCADE,
+    event_id INTEGER NOT NULL REFERENCES public.patient_events(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     type VARCHAR(100) NOT NULL, -- MIME type
     size INTEGER NOT NULL, -- file size in bytes
@@ -207,22 +207,8 @@ CREATE TRIGGER update_event_attachments_updated_at BEFORE UPDATE ON public.event
 CREATE TRIGGER update_reminders_updated_at BEFORE UPDATE ON public.reminders FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_products_updated_at BEFORE UPDATE ON public.products FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- Insert sample data
-INSERT INTO doctors (name, specialization, color) VALUES
-('Dr. Mario Rossi', 'Ortodonzia', '#FF5733'),
-('Dr. Anna Verdi', 'Endodonzia', '#33FF57'),
-('Dr. Luca Bianchi', 'Chirurgia Orale', '#3357FF'),
-('Dr. Sara Neri', 'Igiene Dentale', '#FF33F5');
-
-INSERT INTO treatments (name, duration, price, category) VALUES
-('Visita di Controllo', 30, 50.00, 'Prevenzione'),
-('Pulizia Dentale', 45, 80.00, 'Igiene'),
-('Otturazione', 60, 120.00, 'Conservativa'),
-('Estrazione', 45, 100.00, 'Chirurgia'),
-('Devitalizzazione', 90, 300.00, 'Endodonzia'),
-('Impianto Dentale', 120, 800.00, 'Implantologia'),
-('Ortodonzia Mobile', 30, 200.00, 'Ortodonzia'),
-('Sbiancamento', 60, 250.00, 'Estetica');
+-- Create sequence for invoice numbers
+CREATE SEQUENCE IF NOT EXISTS invoice_number_seq START 1;
 
 -- Function to generate invoice number
 CREATE OR REPLACE FUNCTION generate_invoice_number()
@@ -236,9 +222,3 @@ BEGIN
     RETURN 'INV-' || year_part || '-' || seq_part;
 END;
 $$ LANGUAGE plpgsql;
-
--- Create sequence for invoice numbers
-CREATE SEQUENCE IF NOT EXISTS invoice_number_seq START 1;
-
--- Note: Row Level Security (RLS) policies removed for easier local development
--- Add RLS policies in production if needed

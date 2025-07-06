@@ -1,14 +1,16 @@
+import { useState, useEffect } from 'react';
 import { Modal, Button, Badge } from 'flowbite-react';
 import { Icon } from '@iconify/react';
 import { format } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { 
-  useAppointmentStore, 
+  AppointmentService,
   getStatusBadgeColor, 
   type Appointment,
   type Patient,
   type Doctor,
-  type Treatment
+  type Treatment,
+  type AppointmentWithDetails
 } from '../../services/AppointmentService';
 
 interface DayAppointmentsModalProps {
@@ -26,49 +28,39 @@ export default function DayAppointmentsModal({
   onNewAppointment,
   onEditAppointment 
 }: DayAppointmentsModalProps) {
-  const { 
-    appointments,
-    patients,
-    doctors,
-    treatments,
-    deleteAppointment 
-  } = useAppointmentStore();
+  const [dayAppointments, setDayAppointments] = useState<AppointmentWithDetails[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const dayAppointments = appointments.filter(
-    appointment => appointment.date === date
-  );
+  useEffect(() => {
+    if (isOpen && date) {
+      loadDayAppointments();
+    }
+  }, [isOpen, date]);
 
-  const getPatient = (patientId: number): Patient => {
-    return patients.find(p => p.id === patientId) || { 
-      id: patientId,
-      name: 'Paziente non trovato',
-      phone: '',
-      email: ''
-    };
+  const loadDayAppointments = async () => {
+    try {
+      setLoading(true);
+      const appointments = await AppointmentService.getAppointmentsByDate(date);
+      setDayAppointments(appointments);
+    } catch (error) {
+      console.error('Error loading day appointments:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const getDoctor = (doctorId: number): Doctor => {
-    return doctors.find(d => d.id === doctorId) || {
-      id: doctorId,
-      name: 'Dottore non trovato',
-      specialization: '',
-      color: '#cccccc'
-    };
+  const handleDeleteAppointment = async (appointmentId: number) => {
+    try {
+      await AppointmentService.deleteAppointment(appointmentId);
+      await loadDayAppointments(); // Reload appointments after deletion
+    } catch (error) {
+      console.error('Error deleting appointment:', error);
+    }
   };
 
-  const getTreatment = (treatmentId: number): Treatment => {
-    return treatments.find(t => t.id === treatmentId) || {
-      id: treatmentId,
-      name: 'Trattamento non trovato',
-      duration: 0,
-      price: 0,
-      category: ''
-    };
-  };
-
-  const handleDeleteAppointment = (id: number) => {
+  const confirmDeleteAppointment = (id: number) => {
     if (window.confirm('Sei sicuro di voler eliminare questo appuntamento?')) {
-      deleteAppointment(id);
+      handleDeleteAppointment(id);
     }
   };
 
@@ -84,34 +76,40 @@ export default function DayAppointmentsModal({
             Nuovo Appuntamento
           </Button>
 
-          {dayAppointments.length === 0 ? (
+          {loading ? (
+            <div className="text-center text-gray-500">
+              Caricamento appuntamenti...
+            </div>
+          ) : dayAppointments.length === 0 ? (
             <div className="text-center text-gray-500">
               Nessun appuntamento per questa data
             </div>
           ) : (
             <div className="space-y-4">
               {dayAppointments.map((appointment) => {
-                const patient = getPatient(appointment.patientId);
-                const doctor = getDoctor(appointment.doctorId);
-                const treatment = getTreatment(appointment.treatmentId);
+                const patient = appointment.patient;
+                const doctor = appointment.doctor;
+                const treatment = appointment.treatment;
                 
                 return (
                   <div
                     key={appointment.id}
                     className="mb-4 p-4 rounded-lg border"
-                    style={{ borderLeftWidth: '4px', borderLeftColor: doctor.color }}
+                    style={{ borderLeftWidth: '4px', borderLeftColor: doctor?.color || '#cccccc' }}
                   >
                     <div className="flex justify-between items-start">
                       <div>
-                        <div className="font-semibold text-lg">{patient.name}</div>
+                        <div className="font-semibold text-lg">
+                          {patient ? `${patient.first_name} ${patient.last_name}` : 'Paziente non trovato'}
+                        </div>
                         <div className="text-gray-600">
-                          {appointment.startTime} - {appointment.endTime} | {doctor.name}
+                          {appointment.start_time} - {appointment.end_time} | {doctor ? doctor.name : 'Dottore non trovato'}
                         </div>
                         <div className="mt-2">
                           <Badge color={getStatusBadgeColor(appointment.status)}>
                             {appointment.status}
                           </Badge>
-                          <span className="ml-2 text-sm">{treatment.name}</span>
+                          <span className="ml-2 text-sm">{treatment ? treatment.name : 'Trattamento non trovato'}</span>
                         </div>
                       </div>
                       <div className="flex gap-2">
@@ -125,7 +123,7 @@ export default function DayAppointmentsModal({
                         <Button
                           size="sm"
                           color="failure"
-                          onClick={() => handleDeleteAppointment(appointment.id)}
+                          onClick={() => confirmDeleteAppointment(appointment.id)}
                         >
                           <Icon icon="solar:trash-bin-trash-outline" className="w-4 h-4" />
                         </Button>

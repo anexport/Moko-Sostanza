@@ -4,29 +4,40 @@ import SimpleBar from "simplebar-react";
 import { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import {
-  useAppointmentStore,
+  AppointmentService,
   getAppointmentTitle,
-  getAppointmentColor
+  getAppointmentColor,
+  type AppointmentWithDetails
 } from "../../services/AppointmentService";
 import AppointmentModal from "../../components/appointments/AppointmentModal";
 
 const Appointments = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const {
-    appointments,
-    patients,
-    doctors,
-    treatments,
-    getPatientById,
-    getDoctorById,
-    getTreatmentById
-  } = useAppointmentStore();
-
+  
+  const [appointments, setAppointments] = useState<AppointmentWithDetails[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("Oggi");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<number | null>(null);
-  const [filteredAppointments, setFilteredAppointments] = useState(appointments);
+  const [filteredAppointments, setFilteredAppointments] = useState<AppointmentWithDetails[]>([]);
+
+  // Load appointments data
+  useEffect(() => {
+    loadAppointments();
+  }, []);
+
+  const loadAppointments = async () => {
+    try {
+      setLoading(true);
+      const result = await AppointmentService.getAppointments();
+      setAppointments(result.appointments);
+    } catch (error) {
+      console.error('Error loading appointments:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Apri automaticamente il modale quando si accede alla rotta /appointments/new o /clinic/appointments/new
   useEffect(() => {

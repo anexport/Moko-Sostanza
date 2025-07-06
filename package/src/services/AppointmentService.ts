@@ -9,12 +9,12 @@ import { supabase } from '../lib/supabase';
 import type { Database } from '../types/database';
 
 // Tipi dal database
-type Appointment = Database['public']['Tables']['appointments']['Row'];
-type AppointmentInsert = Database['public']['Tables']['appointments']['Insert'];
-type AppointmentUpdate = Database['public']['Tables']['appointments']['Update'];
-type Patient = Database['public']['Tables']['patients']['Row'];
-type Doctor = Database['public']['Tables']['doctors']['Row'];
-type Treatment = Database['public']['Tables']['treatments']['Row'];
+export type Appointment = Database['public']['Tables']['appointments']['Row'];
+export type AppointmentInsert = Database['public']['Tables']['appointments']['Insert'];
+export type AppointmentUpdate = Database['public']['Tables']['appointments']['Update'];
+export type Patient = Database['public']['Tables']['patients']['Row'];
+export type Doctor = Database['public']['Tables']['doctors']['Row'];
+export type Treatment = Database['public']['Tables']['treatments']['Row'];
 
 // Tipo per appuntamento con dati correlati
 export interface AppointmentWithDetails extends Appointment {

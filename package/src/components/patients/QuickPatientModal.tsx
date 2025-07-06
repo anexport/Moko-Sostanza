@@ -1,15 +1,15 @@
 import { useState } from 'react';
 import { Modal, Button, Label, TextInput, Select, Textarea } from 'flowbite-react';
-import { useAppointmentStore } from '../../services/AppointmentService';
+import { PatientService } from '../../services/PatientService';
 
 interface QuickPatientModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onPatientAdded: (patientId: number) => void;
+  onPatientAdded: (patientId: string) => void;
 }
 
 const QuickPatientModal = ({ isOpen, onClose, onPatientAdded }: QuickPatientModalProps) => {
-  const { addPatient } = useAppointmentStore();
+  const [loading, setLoading] = useState(false);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -32,20 +32,26 @@ const QuickPatientModal = ({ isOpen, onClose, onPatientAdded }: QuickPatientModa
     }));
   };
   
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     
     try {
       // Aggiungi il nuovo paziente
-      const newPatient = {
-        name: formData.name,
+      const newPatientData = {
+        first_name: formData.name.split(' ')[0],
+        last_name: formData.name.split(' ').slice(1).join(' ') || '',
         phone: formData.phone,
-        email: formData.email
+        email: formData.email,
+        birth_date: formData.birthdate,
+        gender: formData.gender,
+        address: formData.address,
+        notes: formData.notes,
+        tax_code: formData.udiCode
       };
       
-      // Aggiungi il paziente allo store e ottieni l'ID
-      const newPatientId = addPatient(newPatient);
+      // Aggiungi il paziente tramite il servizio
+      const newPatient = await PatientService.createPatient(newPatientData);
       
       // Resetta il form
       setFormData({
@@ -60,7 +66,7 @@ const QuickPatientModal = ({ isOpen, onClose, onPatientAdded }: QuickPatientModa
       });
       
       // Notifica il componente padre
-      onPatientAdded(newPatientId);
+      onPatientAdded(newPatient.id);
       
       // Chiudi il modale
       onClose();
