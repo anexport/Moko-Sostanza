@@ -3,10 +3,12 @@ import { Button, Badge, Tooltip } from "flowbite-react";
 import { Icon } from "@iconify/react";
 import SimpleBar from "simplebar-react";
 import {
-  useAppointmentStore,
+  AppointmentService,
+  type AppointmentWithDetails,
   getAppointmentTitle,
   getAppointmentColor
 } from "../../services/AppointmentService";
+import { DoctorService } from "../../services/DoctorService";
 import { useReminderStore } from "../../services/ReminderService";
 import AppointmentModal from "../../components/appointments/AppointmentModal";
 import DayAppointmentsModal from "../../components/appointments/DayAppointmentsModal";
@@ -14,7 +16,9 @@ import ReminderModal from "../../components/reminders/ReminderModal";
 
 // Componente principale del calendario
 const Calendar = () => {
-  const { appointments, doctors } = useAppointmentStore();
+  const [appointments, setAppointments] = useState<AppointmentWithDetails[]>([]);
+  const [doctors, setDoctors] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<"month" | "week" | "day" | "list">("month");
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -24,6 +28,35 @@ const Calendar = () => {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
+
+  // Carica appuntamenti e dottori
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        
+        // Carica appuntamenti del mese corrente
+        const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+        const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+        
+        const startDate = startOfMonth.toISOString().split('T')[0];
+        const endDate = endOfMonth.toISOString().split('T')[0];
+        
+        const appointmentsData = await AppointmentService.getAppointmentsByDateRange(startDate, endDate);
+        setAppointments(appointmentsData);
+        
+        // Carica dottori
+        const doctorsResult = await DoctorService.getDoctors();
+        setDoctors(doctorsResult.doctors);
+      } catch (error) {
+        console.error('Errore nel caricamento dei dati del calendario:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, [currentDate]);
 
   // Funzione per ottenere il nome del mese e l'anno
   const getMonthYearHeader = () => {
@@ -181,6 +214,22 @@ const Calendar = () => {
     ? appointments.find(a => a.id === selectedAppointment)
     : undefined;
 
+  // Funzione per ricaricare gli appuntamenti dopo modifiche
+  const reloadAppointments = async () => {
+    try {
+      const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+      const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+      
+      const startDate = startOfMonth.toISOString().split('T')[0];
+      const endDate = endOfMonth.toISOString().split('T')[0];
+      
+      const appointmentsData = await AppointmentService.getAppointmentsByDateRange(startDate, endDate);
+      setAppointments(appointmentsData);
+    } catch (error) {
+      console.error('Errore nel ricaricamento degli appuntamenti:', error);
+    }
+  };
+
   return (
     <div className="rounded-xl dark:shadow-dark-md shadow-md bg-white dark:bg-darkgray p-6 relative w-full break-words">
       <div className="flex flex-col">
@@ -283,6 +332,11 @@ const Calendar = () => {
               </div>
 
               <div className="p-4">
+                {loading ? (
+                  <div className="flex justify-center items-center h-64">
+                    <div className="text-gray-500">Caricamento calendario...</div>
+                  </div>
+                ) : (
                 <div className="grid grid-cols-7 gap-px bg-gray-200">
                   {/* Intestazioni dei giorni della settimana */}
                   {weekDays.map((day, index) => (
@@ -350,9 +404,9 @@ const Calendar = () => {
                                       openEditAppointmentModal(appointment.id);
                                     }}
                                   >
-                                    <Tooltip content={`${appointment.startTime} - ${appointment.endTime}: ${title}`}>
+                                    <Tooltip content={`${appointment.start_time} - ${appointment.end_time}: ${title}`}>
                                       <div className="flex items-center w-full">
-                                        <span className="font-bold mr-1">{appointment.startTime}</span>
+                                        <span className="font-bold mr-1">{appointment.start_time}</span>
                                         <span className="truncate">{title}</span>
                                       </div>
                                     </Tooltip>
@@ -382,6 +436,7 @@ const Calendar = () => {
                     );
                   })}
                 </div>
+                )}
               </div>
             </div>
           </div>
@@ -391,7 +446,10 @@ const Calendar = () => {
       {/* Modale per la creazione/modifica degli appuntamenti */}
       <AppointmentModal
         isOpen={isModalOpen}
-        onClose={closeModal}
+        onClose={() => {
+          closeModal();
+          reloadAppointments(); // Ricarica dopo la chiusura
+        }}
         appointment={selectedAppointmentData}
         selectedDate={selectedDate || undefined}
         selectedTime={selectedTime || undefined}
@@ -401,9 +459,15 @@ const Calendar = () => {
       {selectedDay && (
         <DayAppointmentsModal
           isOpen={isDayModalOpen}
-          onClose={closeDayModal}
-          date={selectedDay}
-          onNewAppointment={openNewAppointmentModal}
+          onClose={() => {
+            closeDayModal();
+            reloadAppointments(); // Ricarica dopo la chiusura
+          }}
+          date={formatDate(selectedDay)}
+          onNewAppointment={(dateStr: string, time?: string) => {
+            const date = new Date(dateStr);
+            openNewAppointmentModal(date, time);
+          }}
           onEditAppointment={openEditAppointmentModal}
         />
       )}

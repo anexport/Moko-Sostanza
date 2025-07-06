@@ -1,4 +1,4 @@
-import { Table, Badge, Button, Select, TextInput, Tooltip } from "flowbite-react";
+import { Table, Badge, Button, Select, TextInput, Tooltip, Spinner } from "flowbite-react";
 import { Icon } from "@iconify/react";
 import SimpleBar from "simplebar-react";
 import { useState, useEffect, useRef } from "react";
@@ -6,56 +6,25 @@ import { Link, useLocation } from "react-router-dom";
 import { HiSearch } from "react-icons/hi";
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import { InvoiceService, type InvoiceWithDetails } from "../../services/InvoiceService";
 
-const BillingData = [
-  {
-    id: 1,
-    patient: "Mario Rossi",
-    date: "15/05/2023",
-    invoice: "INV-2023-001",
-    amount: "€180",
-    status: "Pagato"
-  },
-  {
-    id: 2,
-    patient: "Giulia Bianchi",
-    date: "03/04/2023",
-    invoice: "INV-2023-002",
-    amount: "€350",
-    status: "Pagato"
-  },
-  {
-    id: 3,
-    patient: "Luca Verdi",
-    date: "22/03/2023",
-    invoice: "INV-2023-003",
-    amount: "€120",
-    status: "In attesa"
-  },
-  {
-    id: 4,
-    patient: "Sofia Neri",
-    date: "10/05/2023",
-    invoice: "INV-2023-004",
-    amount: "€450",
-    status: "Pagato"
-  },
-  {
-    id: 5,
-    patient: "Marco Gialli",
-    date: "01/02/2023",
-    invoice: "INV-2023-005",
-    amount: "€1200",
-    status: "In attesa"
-  }
-];
+// Tipo per fattura formattata per la UI
+interface FormattedInvoice {
+  id: string;
+  patient: string;
+  date: string;
+  invoice: string;
+  amount: string;
+  status: string;
+  rawData: InvoiceWithDetails;
+}
 
 // Componente per il template di stampa dell'elenco fatture
 const InvoiceListPrintTemplate = ({
   invoices,
   period
 }: {
-  invoices: typeof BillingData,
+  invoices: FormattedInvoice[],
   period: string
 }) => {
   return (
@@ -114,7 +83,7 @@ const InvoiceListPrintTemplate = ({
               invoices.reduce((total, bill) => {
                 const amount = parseFloat(bill.amount.replace('€', '').replace(',', '.').trim());
                 return total + (isNaN(amount) ? 0 : amount);
-              }, 0).toFixed(2).replace('.', ',')
+              }, 0).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
             } €</p>
           </div>
         </div>
@@ -132,7 +101,10 @@ const Billing = () => {
   const location = useLocation();
   const [selectedPeriod, setSelectedPeriod] = useState("Questo Mese");
   const [searchTerm, setSearchTerm] = useState("");
-  const [filteredBilling, setFilteredBilling] = useState(BillingData);
+  const [invoices, setInvoices] = useState<InvoiceWithDetails[]>([]);
+  const [filteredBilling, setFilteredBilling] = useState<FormattedInvoice[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showPrintTemplate, setShowPrintTemplate] = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const printTemplateRef = useRef<HTMLDivElement>(null);
@@ -140,6 +112,68 @@ const Billing = () => {
 
   // Verifica se siamo nella pagina di ricerca
   const isSearchPage = location.pathname === "/billing/search";
+
+  // Funzione per formattare le fatture per la UI
+  const formatInvoices = (invoiceList: InvoiceWithDetails[]): FormattedInvoice[] => {
+    return invoiceList.map(invoice => {
+      const patientName = invoice.patient?.first_name && invoice.patient?.last_name 
+        ? `${invoice.patient.first_name} ${invoice.patient.last_name}`
+        : invoice.patient?.first_name || 'Paziente';
+      
+      const formatDate = (dateStr: string) => {
+        return new Date(dateStr).toLocaleDateString('it-IT');
+      };
+
+      const formatAmount = (amount: number | null) => {
+        return amount ? `€${amount.toFixed(2).replace('.', ',')}` : '€0,00';
+      };
+
+      const formatStatus = (status: string | null) => {
+        switch (status) {
+          case 'paid': return 'Pagato';
+          case 'sent': return 'Inviata';
+          case 'draft': return 'Bozza';
+          case 'overdue': return 'Scaduta';
+          default: return 'Non definito';
+        }
+      };
+
+      return {
+        id: invoice.id,
+        patient: patientName,
+        date: formatDate(invoice.issue_date),
+        invoice: invoice.invoice_number || '',
+        amount: formatAmount(invoice.total),
+        status: formatStatus(invoice.status),
+        rawData: invoice
+      };
+    });
+  };
+
+  // Carica le fatture dal database
+  const loadInvoices = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const result = await InvoiceService.getInvoices(
+        { search: searchTerm || undefined },
+        { limit: 100, sortBy: 'issue_date', sortOrder: 'desc' }
+      );
+      setInvoices(result.invoices);
+      const formattedData = formatInvoices(result.invoices);
+      setFilteredBilling(formattedData);
+    } catch (err) {
+      console.error('Error loading invoices:', err);
+      setError('Errore nel caricamento delle fatture');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Carica le fatture al mount
+  useEffect(() => {
+    loadInvoices();
+  }, []);
 
   // Imposta il focus sul campo di ricerca quando si accede alla pagina di ricerca
   useEffect(() => {
@@ -157,9 +191,11 @@ const Billing = () => {
     setSearchTerm(term);
 
     if (term.trim() === "") {
-      setFilteredBilling(BillingData);
+      const formattedData = formatInvoices(invoices);
+      setFilteredBilling(formattedData);
     } else {
-      const filtered = BillingData.filter(bill =>
+      const formattedData = formatInvoices(invoices);
+      const filtered = formattedData.filter(bill =>
         bill.patient.toLowerCase().includes(term.toLowerCase()) ||
         bill.invoice.toLowerCase().includes(term.toLowerCase()) ||
         bill.amount.includes(term)
@@ -167,6 +203,14 @@ const Billing = () => {
       setFilteredBilling(filtered);
     }
   };
+
+  // Ricerca con debounce per chiamate API
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      loadInvoices();
+    }, 500);
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm]);
 
   const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setSelectedPeriod(e.target.value);
@@ -460,7 +504,22 @@ const Billing = () => {
               <Table.HeadCell className="p-4 no-print">Azioni</Table.HeadCell>
             </Table.Head>
             <Table.Body className="divide-y divide-border dark:divide-darkborder">
-              {filteredBilling.length > 0 ? (
+              {loading ? (
+                <Table.Row>
+                  <Table.Cell colSpan={6} className="text-center py-4">
+                    <div className="flex justify-center items-center">
+                      <Spinner size="md" />
+                      <span className="ml-2 text-gray-500">Caricamento fatture...</span>
+                    </div>
+                  </Table.Cell>
+                </Table.Row>
+              ) : error ? (
+                <Table.Row>
+                  <Table.Cell colSpan={6} className="text-center py-4">
+                    <p className="text-red-500">{error}</p>
+                  </Table.Cell>
+                </Table.Row>
+              ) : filteredBilling.length > 0 ? (
                 filteredBilling.map((bill) => (
                 <Table.Row key={bill.id}>
                   <Table.Cell className="p-4">
@@ -484,7 +543,13 @@ const Billing = () => {
                       className={
                         bill.status === "Pagato"
                           ? "bg-lightsuccess text-success"
-                          : "bg-lightwarning text-warning"
+                          : bill.status === "Inviata"
+                          ? "bg-lightinfo text-info"
+                          : bill.status === "Bozza"
+                          ? "bg-lightwarning text-warning"
+                          : bill.status === "Scaduta"
+                          ? "bg-lighterror text-error"
+                          : "bg-lightgray text-gray"
                       }
                     >
                       {bill.status}

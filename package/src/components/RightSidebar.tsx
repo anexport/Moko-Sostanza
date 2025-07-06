@@ -1,31 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "flowbite-react";
 import { Icon } from "@iconify/react";
 import { Link } from "react-router-dom";
 import SimpleBar from "simplebar-react";
 import 'simplebar-react/dist/simplebar.min.css';
 import { useReminderStore, getRelativeDate } from "../services/ReminderService";
+import { AppointmentService, type AppointmentWithDetails } from "../services/AppointmentService";
 import ReminderModal from "./reminders/ReminderModal";
-
-// Mock data per gli ultimi appuntamenti
-const recentAppointments = [
-  {
-    id: 1,
-    patient: "Mario Rossi",
-    time: "14:30",
-    date: "Oggi",
-    treatment: "Pulizia dentale",
-    status: "upcoming"
-  },
-  {
-    id: 2,
-    patient: "Laura Bianchi",
-    time: "16:00",
-    date: "Oggi",
-    treatment: "Controllo",
-    status: "upcoming"
-  }
-];
 
 // Funzione per ottenere il colore dello status
 const getStatusColor = (status: string) => {
@@ -44,9 +25,28 @@ const getStatusColor = (status: string) => {
 const RightSidebar = () => {
   const { getUpcomingReminders, toggleCompleted } = useReminderStore();
   const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
+  const [upcomingAppointments, setUpcomingAppointments] = useState<AppointmentWithDetails[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // Ottieni i promemoria imminenti
   const upcomingReminders = getUpcomingReminders(3);
+
+  // Carica i prossimi appuntamenti
+  useEffect(() => {
+    const loadUpcomingAppointments = async () => {
+      try {
+        setLoading(true);
+        const appointments = await AppointmentService.getUpcomingAppointments(3);
+        setUpcomingAppointments(appointments);
+      } catch (error) {
+        console.error('Errore nel caricamento degli appuntamenti:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadUpcomingAppointments();
+  }, []);
 
   // Apri il modale per creare un nuovo promemoria
   const openReminderModal = () => {
@@ -135,31 +135,54 @@ const RightSidebar = () => {
             <Icon icon="solar:arrow-right-linear" className="ml-auto" height={14} />
           </h6>
           <div className="space-y-2">
-            {recentAppointments.map((appointment) => (
-              <div
-                key={appointment.id}
-                className="p-2 bg-lightgray dark:bg-darkmuted rounded-lg hover:bg-lightprimary dark:hover:bg-primary/10 transition-colors cursor-pointer"
-              >
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-sm font-medium text-dark dark:text-white truncate">
-                    {appointment.patient}
-                  </span>
-                  <div className="flex items-center gap-1.5 text-xs">
-                    <Icon
-                      icon="solar:clock-circle-outline"
-                      className={getStatusColor(appointment.status)}
-                      height={12}
-                    />
-                    <span className="text-bodytext">
-                      {appointment.date} - {appointment.time}
-                    </span>
-                  </div>
-                  <span className="text-xs text-bodytext truncate">
-                    {appointment.treatment}
-                  </span>
-                </div>
+            {loading ? (
+              <div className="text-xs text-gray-500 text-center p-2">
+                Caricamento...
               </div>
-            ))}
+            ) : upcomingAppointments.length > 0 ? (
+              upcomingAppointments.map((appointment) => {
+                const patientName = appointment.patient?.first_name && appointment.patient?.last_name
+                  ? `${appointment.patient.first_name} ${appointment.patient.last_name}`
+                  : appointment.patient?.first_name || 'Paziente';
+                
+                const treatmentName = appointment.treatment?.name || 'Trattamento';
+                
+                // Calcola se l'appuntamento è oggi
+                const today = new Date().toISOString().split('T')[0];
+                const isToday = appointment.date === today;
+                const dateDisplay = isToday ? 'Oggi' : new Date(appointment.date).toLocaleDateString('it-IT', { month: 'short', day: 'numeric' });
+
+                return (
+                  <div
+                    key={appointment.id}
+                    className="p-2 bg-lightgray dark:bg-darkmuted rounded-lg hover:bg-lightprimary dark:hover:bg-primary/10 transition-colors cursor-pointer"
+                  >
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-sm font-medium text-dark dark:text-white truncate">
+                        {patientName}
+                      </span>
+                      <div className="flex items-center gap-1.5 text-xs">
+                        <Icon
+                          icon="solar:clock-circle-outline"
+                          className={getStatusColor(appointment.status || 'upcoming')}
+                          height={12}
+                        />
+                        <span className="text-bodytext">
+                          {dateDisplay} - {appointment.start_time}
+                        </span>
+                      </div>
+                      <span className="text-xs text-bodytext truncate">
+                        {treatmentName}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="text-xs text-gray-500 text-center p-2">
+                Nessun appuntamento imminente
+              </div>
+            )}
           </div>
         </div>
 

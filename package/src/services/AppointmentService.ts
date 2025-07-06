@@ -2,271 +2,571 @@
  * MOKO SOSTANZA Dental CRM - Appointment Service
  *
  * Servizio per la gestione degli appuntamenti
- * Currently using mock data - will be connected to database later
+ * Integrato con Supabase database
  */
 
-import { type Appointment } from '../db/client';
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { supabase } from '../lib/supabase';
+import type { Database } from '../types/database';
 
-// Definizione dei tipi
-export interface Patient {
-  id: number;
-  name: string;
-  phone: string;
-  email: string;
+// Tipi dal database
+type Appointment = Database['public']['Tables']['appointments']['Row'];
+type AppointmentInsert = Database['public']['Tables']['appointments']['Insert'];
+type AppointmentUpdate = Database['public']['Tables']['appointments']['Update'];
+type Patient = Database['public']['Tables']['patients']['Row'];
+type Doctor = Database['public']['Tables']['doctors']['Row'];
+type Treatment = Database['public']['Tables']['treatments']['Row'];
+
+// Tipo per appuntamento con dati correlati
+export interface AppointmentWithDetails extends Appointment {
+  patient?: Patient;
+  doctor?: Doctor;
+  treatment?: Treatment;
 }
 
-export interface Doctor {
-  id: number;
-  name: string;
-  specialization: string;
-  color: string;
+// Interfacce per le opzioni di ricerca e paginazione
+export interface AppointmentSearchFilters {
+  search?: string;
+  patientId?: number;
+  doctorId?: number;
+  treatmentId?: number;
+  status?: string;
+  dateFrom?: string;
+  dateTo?: string;
 }
 
-export interface Treatment {
-  id: number;
-  name: string;
-  duration: number; // in minuti
-  price: number;
-  category: string;
+export interface PaginationOptions {
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
 }
 
-export interface Appointment {
-  id: number;
-  patientId: number;
-  doctorId: number;
-  treatmentId: number;
-  date: string; // formato YYYY-MM-DD
-  startTime: string; // formato HH:MM
-  endTime: string; // formato HH:MM
-  status: 'confermato' | 'in attesa' | 'cancellato' | 'completato';
-  notes?: string;
+export interface AppointmentListResult {
+  appointments: AppointmentWithDetails[];
+  pagination: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  };
 }
 
-// Dati di esempio
-const samplePatients: Patient[] = [
-  { id: 1, name: "Mario Rossi", phone: "+39 333 1234567", email: "mario.rossi@example.com" },
-  { id: 2, name: "Giulia Bianchi", phone: "+39 333 7654321", email: "giulia.bianchi@example.com" },
-  { id: 3, name: "Luca Verdi", phone: "+39 333 9876543", email: "luca.verdi@example.com" },
-  { id: 4, name: "Sofia Neri", phone: "+39 333 3456789", email: "sofia.neri@example.com" },
-  { id: 5, name: "Marco Gialli", phone: "+39 333 6789012", email: "marco.gialli@example.com" }
-];
+export class AppointmentService {
+  /**
+   * Ottieni tutti gli appuntamenti con filtri e paginazione
+   */
+  static async getAppointments(
+    filters: AppointmentSearchFilters = {},
+    pagination: PaginationOptions = {}
+  ): Promise<AppointmentListResult> {
+    try {
+      let query = supabase
+        .from('appointments')
+        .select(`
+          *,
+          patient:patients(*),
+          doctor:doctors(*),
+          treatment:treatments(*)
+        `, { count: 'exact' });
 
-const sampleDoctors: Doctor[] = [
-  { id: 1, name: "Dr. Bianchi", specialization: "Dentista generico", color: "#1E88E5" },
-  { id: 2, name: "Dr. Verdi", specialization: "Ortodontista", color: "#00BCD4" },
-  { id: 3, name: "Dr. Rossi", specialization: "Chirurgo orale", color: "#4CAF50" }
-];
+      // Applica filtri
+      if (filters.patientId) {
+        query = query.eq('patient_id', filters.patientId);
+      }
 
-const sampleTreatments: Treatment[] = [
-  { id: 1, name: "Pulizia dentale", duration: 30, price: 80, category: "Igiene" },
-  { id: 2, name: "Controllo ortodontico", duration: 45, price: 100, category: "Ortodonzia" },
-  { id: 3, name: "Otturazione", duration: 45, price: 120, category: "Conservativa" },
-  { id: 4, name: "Estrazione", duration: 60, price: 150, category: "Chirurgia" },
-  { id: 5, name: "Radiografia", duration: 15, price: 70, category: "Diagnostica" },
-  { id: 6, name: "Impianto dentale", duration: 90, price: 1200, category: "Implantologia" },
-  { id: 7, name: "Sbiancamento", duration: 60, price: 250, category: "Estetica" }
-];
+      if (filters.doctorId) {
+        query = query.eq('doctor_id', filters.doctorId);
+      }
 
-// Genera data e ora casuali per un appuntamento
-const generateRandomDateTime = (startDate: Date, endDate: Date): { date: string, startTime: string, endTime: string } => {
-  const date = new Date(startDate.getTime() + Math.random() * (endDate.getTime() - startDate.getTime()));
+      if (filters.treatmentId) {
+        query = query.eq('treatment_id', filters.treatmentId);
+      }
 
-  // Assicuriamoci che l'ora sia tra le 9:00 e le 18:00
-  const hours = 9 + Math.floor(Math.random() * 8);
-  const minutes = Math.floor(Math.random() * 4) * 15; // 0, 15, 30, 45
+      if (filters.status) {
+        query = query.eq('status', filters.status);
+      }
 
-  date.setHours(hours, minutes, 0, 0);
+      if (filters.dateFrom) {
+        query = query.gte('date', filters.dateFrom);
+      }
 
-  // Formato data: YYYY-MM-DD
-  const dateStr = date.toISOString().split('T')[0];
+      if (filters.dateTo) {
+        query = query.lte('date', filters.dateTo);
+      }
 
-  // Formato ora: HH:MM
-  const startTimeStr = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+      // Filtro di ricerca per nome paziente
+      if (filters.search) {
+        query = query.or(`notes.ilike.%${filters.search}%`);
+      }
 
-  // Calcola l'ora di fine in base alla durata del trattamento
-  const treatmentId = Math.floor(Math.random() * sampleTreatments.length) + 1;
-  const treatment = sampleTreatments.find(t => t.id === treatmentId);
-  const durationMinutes = treatment ? treatment.duration : 30;
+      // Applica ordinamento
+      const sortBy = pagination.sortBy || 'date';
+      const sortOrder = pagination.sortOrder || 'desc';
+      
+      if (sortBy === 'date') {
+        query = query.order('date', { ascending: sortOrder === 'asc' });
+        query = query.order('start_time', { ascending: true });
+      } else {
+        query = query.order(sortBy, { ascending: sortOrder === 'asc' });
+      }
 
-  const appointmentEndDate = new Date(date);
-  appointmentEndDate.setMinutes(date.getMinutes() + durationMinutes);
-  const endHours = appointmentEndDate.getHours();
-  const endMinutes = appointmentEndDate.getMinutes();
-  const endTimeStr = `${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}`;
+      // Applica paginazione
+      const page = pagination.page || 1;
+      const limit = pagination.limit || 50;
+      const offset = (page - 1) * limit;
+      query = query.range(offset, offset + limit - 1);
 
-  return { date: dateStr, startTime: startTimeStr, endTime: endTimeStr };
-};
+      const { data: appointments, error, count } = await query;
 
-// Genera appuntamenti di esempio
-const generateSampleAppointments = (count: number): Appointment[] => {
-  const appointments: Appointment[] = [];
-  const today = new Date();
-  const startDate = new Date(today);
-  startDate.setDate(today.getDate() - 15); // 15 giorni fa
+      if (error) {
+        throw new Error(`Errore nel recupero degli appuntamenti: ${error.message}`);
+      }
 
-  const endDate = new Date(today);
-  endDate.setDate(today.getDate() + 30); // 30 giorni nel futuro
+      const total = count || 0;
+      const totalPages = Math.ceil(total / limit);
 
-  const statuses: Appointment['status'][] = ['confermato', 'in attesa', 'cancellato', 'completato'];
-
-  for (let i = 1; i <= count; i++) {
-    const { date, startTime, endTime } = generateRandomDateTime(startDate, endDate);
-    const patientId = Math.floor(Math.random() * samplePatients.length) + 1;
-    const doctorId = Math.floor(Math.random() * sampleDoctors.length) + 1;
-    const treatmentId = Math.floor(Math.random() * sampleTreatments.length) + 1;
-    const status = statuses[Math.floor(Math.random() * statuses.length)];
-
-    appointments.push({
-      id: i,
-      patientId,
-      doctorId,
-      treatmentId,
-      date,
-      startTime,
-      endTime,
-      status,
-      notes: Math.random() > 0.7 ? "Note aggiuntive per questo appuntamento" : undefined
-    });
+      return {
+        appointments: appointments || [],
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages
+        }
+      };
+    } catch (error) {
+      console.error('Errore in getAppointments:', error);
+      throw error;
+    }
   }
 
-  return appointments;
-};
+  /**
+   * Ottieni un appuntamento per ID con dettagli
+   */
+  static async getAppointmentById(id: number): Promise<AppointmentWithDetails | null> {
+    try {
+      const { data: appointment, error } = await supabase
+        .from('appointments')
+        .select(`
+          *,
+          patient:patients(*),
+          doctor:doctors(*),
+          treatment:treatments(*)
+        `)
+        .eq('id', id)
+        .single();
 
-// Genera 30 appuntamenti di esempio
-const sampleAppointments = generateSampleAppointments(30);
-
-// Definizione dello store
-interface AppointmentStore {
-  patients: Patient[];
-  doctors: Doctor[];
-  treatments: Treatment[];
-  appointments: Appointment[];
-
-  // Azioni
-  addPatient: (patient: Omit<Patient, 'id'>) => number; // Restituisce l'ID del nuovo paziente
-  updatePatient: (id: number, patient: Partial<Patient>) => void;
-  deletePatient: (id: number) => void;
-
-  addDoctor: (doctor: Omit<Doctor, 'id'>) => void;
-  updateDoctor: (id: number, doctor: Partial<Doctor>) => void;
-  deleteDoctor: (id: number) => void;
-
-  addTreatment: (treatment: Omit<Treatment, 'id'>) => void;
-  updateTreatment: (id: number, treatment: Partial<Treatment>) => void;
-  deleteTreatment: (id: number) => void;
-
-  addAppointment: (appointment: Omit<Appointment, 'id'>) => void;
-  updateAppointment: (id: number, appointment: Partial<Appointment>) => void;
-  deleteAppointment: (id: number) => void;
-
-  // Getter
-  getPatientById: (id: number) => Patient | undefined;
-  getDoctorById: (id: number) => Doctor | undefined;
-  getTreatmentById: (id: number) => Treatment | undefined;
-  getAppointmentsByDate: (date: string) => Appointment[];
-  getAppointmentsByPatient: (patientId: number) => Appointment[];
-  getAppointmentsByDoctor: (doctorId: number) => Appointment[];
-  getAppointmentsByDateRange: (startDate: string, endDate: string) => Appointment[];
-}
-
-// Creazione dello store
-export const useAppointmentStore = create<AppointmentStore>()(
-  persist(
-    (set, get) => ({
-      patients: samplePatients,
-      doctors: sampleDoctors,
-      treatments: sampleTreatments,
-      appointments: sampleAppointments,
-
-      // Azioni per i pazienti
-      addPatient: (patient) => {
-        let newId = Math.max(0, ...get().patients.map(p => p.id)) + 1;
-        set((state) => ({
-          patients: [...state.patients, { ...patient, id: newId }]
-        }));
-        return newId; // Restituisce l'ID del nuovo paziente
-      },
-
-      updatePatient: (id, patient) => set((state) => ({
-        patients: state.patients.map(p => p.id === id ? { ...p, ...patient } : p)
-      })),
-
-      deletePatient: (id) => set((state) => ({
-        patients: state.patients.filter(p => p.id !== id)
-      })),
-
-      // Azioni per i dottori
-      addDoctor: (doctor) => set((state) => ({
-        doctors: [...state.doctors, { ...doctor, id: Math.max(0, ...state.doctors.map(d => d.id)) + 1 }]
-      })),
-
-      updateDoctor: (id, doctor) => set((state) => ({
-        doctors: state.doctors.map(d => d.id === id ? { ...d, ...doctor } : d)
-      })),
-
-      deleteDoctor: (id) => set((state) => ({
-        doctors: state.doctors.filter(d => d.id !== id)
-      })),
-
-      // Azioni per i trattamenti
-      addTreatment: (treatment) => set((state) => ({
-        treatments: [...state.treatments, { ...treatment, id: Math.max(0, ...state.treatments.map(t => t.id)) + 1 }]
-      })),
-
-      updateTreatment: (id, treatment) => set((state) => ({
-        treatments: state.treatments.map(t => t.id === id ? { ...t, ...treatment } : t)
-      })),
-
-      deleteTreatment: (id) => set((state) => ({
-        treatments: state.treatments.filter(t => t.id !== id)
-      })),
-
-      // Azioni per gli appuntamenti
-      addAppointment: (appointment) => set((state) => ({
-        appointments: [...state.appointments, { ...appointment, id: Math.max(0, ...state.appointments.map(a => a.id)) + 1 }]
-      })),
-
-      updateAppointment: (id, appointment) => set((state) => ({
-        appointments: state.appointments.map(a => a.id === id ? { ...a, ...appointment } : a)
-      })),
-
-      deleteAppointment: (id) => set((state) => ({
-        appointments: state.appointments.filter(a => a.id !== id)
-      })),
-
-      // Getter
-      getPatientById: (id) => get().patients.find(p => p.id === id),
-      getDoctorById: (id) => get().doctors.find(d => d.id === id),
-      getTreatmentById: (id) => get().treatments.find(t => t.id === id),
-
-      getAppointmentsByDate: (date) => get().appointments.filter(a => a.date === date),
-
-      getAppointmentsByPatient: (patientId) => get().appointments.filter(a => a.patientId === patientId),
-
-      getAppointmentsByDoctor: (doctorId) => get().appointments.filter(a => a.doctorId === doctorId),
-
-      getAppointmentsByDateRange: (startDate, endDate) => {
-        return get().appointments.filter(a => {
-          return a.date >= startDate && a.date <= endDate;
-        });
+      if (error) {
+        if (error.code === 'PGRST116') {
+          return null; // Appuntamento non trovato
+        }
+        throw new Error(`Errore nel recupero dell'appuntamento: ${error.message}`);
       }
-    }),
-    {
-      name: 'dental-appointments-storage',
+
+      return appointment;
+    } catch (error) {
+      console.error('Errore in getAppointmentById:', error);
+      throw error;
     }
-  )
-);
+  }
+
+  /**
+   * Crea un nuovo appuntamento
+   */
+  static async createAppointment(appointmentData: AppointmentInsert): Promise<AppointmentWithDetails> {
+    try {
+      // Verifica conflitti di orario per il dottore
+      const conflict = await this.checkTimeConflict(
+        appointmentData.doctor_id!,
+        appointmentData.date!,
+        appointmentData.start_time!,
+        appointmentData.end_time!
+      );
+
+      if (conflict) {
+        throw new Error(`Conflitto di orario: il dottore ha già un appuntamento dalle ${conflict.start_time} alle ${conflict.end_time}`);
+      }
+
+      const { data: appointment, error } = await supabase
+        .from('appointments')
+        .insert(appointmentData)
+        .select(`
+          *,
+          patient:patients(*),
+          doctor:doctors(*),
+          treatment:treatments(*)
+        `)
+        .single();
+
+      if (error) {
+        throw new Error(`Errore nella creazione dell'appuntamento: ${error.message}`);
+      }
+
+      if (!appointment) {
+        throw new Error('Appuntamento creato ma non restituito dal database');
+      }
+
+      return appointment;
+    } catch (error) {
+      console.error('Errore in createAppointment:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Aggiorna un appuntamento esistente
+   */
+  static async updateAppointment(id: number, appointmentData: AppointmentUpdate): Promise<AppointmentWithDetails> {
+    try {
+      // Se si stanno modificando orario o dottore, verifica conflitti
+      if (appointmentData.doctor_id || appointmentData.date || appointmentData.start_time || appointmentData.end_time) {
+        const existingAppointment = await this.getAppointmentById(id);
+        if (!existingAppointment) {
+          throw new Error('Appuntamento non trovato');
+        }
+
+        const doctorId = appointmentData.doctor_id || existingAppointment.doctor_id;
+        const date = appointmentData.date || existingAppointment.date;
+        const startTime = appointmentData.start_time || existingAppointment.start_time;
+        const endTime = appointmentData.end_time || existingAppointment.end_time;
+
+        const conflict = await this.checkTimeConflict(doctorId, date, startTime, endTime, id);
+        if (conflict) {
+          throw new Error(`Conflitto di orario: il dottore ha già un appuntamento dalle ${conflict.start_time} alle ${conflict.end_time}`);
+        }
+      }
+
+      const { data: appointment, error } = await supabase
+        .from('appointments')
+        .update(appointmentData)
+        .eq('id', id)
+        .select(`
+          *,
+          patient:patients(*),
+          doctor:doctors(*),
+          treatment:treatments(*)
+        `)
+        .single();
+
+      if (error) {
+        throw new Error(`Errore nell'aggiornamento dell'appuntamento: ${error.message}`);
+      }
+
+      if (!appointment) {
+        throw new Error('Appuntamento non trovato o non aggiornato');
+      }
+
+      return appointment;
+    } catch (error) {
+      console.error('Errore in updateAppointment:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Elimina un appuntamento
+   */
+  static async deleteAppointment(id: number): Promise<void> {
+    try {
+      const { error } = await supabase
+        .from('appointments')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        throw new Error(`Errore nell'eliminazione dell'appuntamento: ${error.message}`);
+      }
+    } catch (error) {
+      console.error('Errore in deleteAppointment:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ottieni appuntamenti per data
+   */
+  static async getAppointmentsByDate(date: string): Promise<AppointmentWithDetails[]> {
+    try {
+      const { data: appointments, error } = await supabase
+        .from('appointments')
+        .select(`
+          *,
+          patient:patients(*),
+          doctor:doctors(*),
+          treatment:treatments(*)
+        `)
+        .eq('date', date)
+        .order('start_time');
+
+      if (error) {
+        throw new Error(`Errore nel recupero degli appuntamenti per data: ${error.message}`);
+      }
+
+      return appointments || [];
+    } catch (error) {
+      console.error('Errore in getAppointmentsByDate:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ottieni appuntamenti per paziente
+   */
+  static async getAppointmentsByPatient(patientId: number): Promise<AppointmentWithDetails[]> {
+    try {
+      const { data: appointments, error } = await supabase
+        .from('appointments')
+        .select(`
+          *,
+          patient:patients(*),
+          doctor:doctors(*),
+          treatment:treatments(*)
+        `)
+        .eq('patient_id', patientId)
+        .order('date', { ascending: false })
+        .order('start_time', { ascending: false });
+
+      if (error) {
+        throw new Error(`Errore nel recupero degli appuntamenti per paziente: ${error.message}`);
+      }
+
+      return appointments || [];
+    } catch (error) {
+      console.error('Errore in getAppointmentsByPatient:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ottieni appuntamenti per dottore
+   */
+  static async getAppointmentsByDoctor(doctorId: number): Promise<AppointmentWithDetails[]> {
+    try {
+      const { data: appointments, error } = await supabase
+        .from('appointments')
+        .select(`
+          *,
+          patient:patients(*),
+          doctor:doctors(*),
+          treatment:treatments(*)
+        `)
+        .eq('doctor_id', doctorId)
+        .order('date', { ascending: false })
+        .order('start_time', { ascending: false });
+
+      if (error) {
+        throw new Error(`Errore nel recupero degli appuntamenti per dottore: ${error.message}`);
+      }
+
+      return appointments || [];
+    } catch (error) {
+      console.error('Errore in getAppointmentsByDoctor:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ottieni appuntamenti in un range di date
+   */
+  static async getAppointmentsByDateRange(startDate: string, endDate: string): Promise<AppointmentWithDetails[]> {
+    try {
+      const { data: appointments, error } = await supabase
+        .from('appointments')
+        .select(`
+          *,
+          patient:patients(*),
+          doctor:doctors(*),
+          treatment:treatments(*)
+        `)
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .order('date')
+        .order('start_time');
+
+      if (error) {
+        throw new Error(`Errore nel recupero degli appuntamenti per range di date: ${error.message}`);
+      }
+
+      return appointments || [];
+    } catch (error) {
+      console.error('Errore in getAppointmentsByDateRange:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Verifica conflitti di orario per un dottore
+   */
+  static async checkTimeConflict(
+    doctorId: number,
+    date: string,
+    startTime: string,
+    endTime: string,
+    excludeAppointmentId?: number
+  ): Promise<Appointment | null> {
+    try {
+      let query = supabase
+        .from('appointments')
+        .select('*')
+        .eq('doctor_id', doctorId)
+        .eq('date', date)
+        .neq('status', 'cancellato');
+
+      if (excludeAppointmentId) {
+        query = query.neq('id', excludeAppointmentId);
+      }
+
+      const { data: appointments, error } = await query;
+
+      if (error) {
+        throw new Error(`Errore nella verifica dei conflitti: ${error.message}`);
+      }
+
+      // Verifica sovrapposizioni di orario
+      for (const appointment of appointments || []) {
+        const existingStart = appointment.start_time;
+        const existingEnd = appointment.end_time;
+
+        // Verifica se c'è sovrapposizione
+        if (
+          (startTime >= existingStart && startTime < existingEnd) ||
+          (endTime > existingStart && endTime <= existingEnd) ||
+          (startTime <= existingStart && endTime >= existingEnd)
+        ) {
+          return appointment;
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Errore in checkTimeConflict:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ottieni statistiche degli appuntamenti
+   */
+  static async getAppointmentStats(): Promise<{
+    total: number;
+    today: number;
+    thisWeek: number;
+    thisMonth: number;
+    byStatus: { [key: string]: number };
+  }> {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const startOfWeek = new Date();
+      startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+      const startOfWeekStr = startOfWeek.toISOString().split('T')[0];
+      
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      const startOfMonthStr = startOfMonth.toISOString().split('T')[0];
+
+      // Ottieni tutti gli appuntamenti
+      const { data: allAppointments, error: allError } = await supabase
+        .from('appointments')
+        .select('date, status');
+
+      if (allError) {
+        throw new Error(`Errore nel recupero delle statistiche: ${allError.message}`);
+      }
+
+      // Appuntamenti di oggi
+      const { data: todayAppointments, error: todayError } = await supabase
+        .from('appointments')
+        .select('id', { count: 'exact' })
+        .eq('date', today);
+
+      if (todayError) {
+        throw new Error(`Errore nel recupero degli appuntamenti di oggi: ${todayError.message}`);
+      }
+
+      // Appuntamenti di questa settimana
+      const { data: weekAppointments, error: weekError } = await supabase
+        .from('appointments')
+        .select('id', { count: 'exact' })
+        .gte('date', startOfWeekStr);
+
+      if (weekError) {
+        throw new Error(`Errore nel recupero degli appuntamenti della settimana: ${weekError.message}`);
+      }
+
+      // Appuntamenti di questo mese
+      const { data: monthAppointments, error: monthError } = await supabase
+        .from('appointments')
+        .select('id', { count: 'exact' })
+        .gte('date', startOfMonthStr);
+
+      if (monthError) {
+        throw new Error(`Errore nel recupero degli appuntamenti del mese: ${monthError.message}`);
+      }
+
+      const total = allAppointments?.length || 0;
+      const byStatus: { [key: string]: number } = {};
+
+      allAppointments?.forEach(appointment => {
+        if (appointment.status) {
+          byStatus[appointment.status] = (byStatus[appointment.status] || 0) + 1;
+        }
+      });
+
+      return {
+        total,
+        today: todayAppointments?.length || 0,
+        thisWeek: weekAppointments?.length || 0,
+        thisMonth: monthAppointments?.length || 0,
+        byStatus
+      };
+    } catch (error) {
+      console.error('Errore in getAppointmentStats:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ottieni i prossimi appuntamenti
+   */
+  static async getUpcomingAppointments(limit: number = 5): Promise<AppointmentWithDetails[]> {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const currentTime = new Date().toTimeString().split(' ')[0].substring(0, 5);
+
+      const { data: appointments, error } = await supabase
+        .from('appointments')
+        .select(`
+          *,
+          patient:patients(*),
+          doctor:doctors(*),
+          treatment:treatments(*)
+        `)
+        .or(`date.gt.${today},and(date.eq.${today},start_time.gte.${currentTime})`)
+        .in('status', ['confermato', 'in attesa'])
+        .order('date')
+        .order('start_time')
+        .limit(limit);
+
+      if (error) {
+        throw new Error(`Errore nel recupero dei prossimi appuntamenti: ${error.message}`);
+      }
+
+      return appointments || [];
+    } catch (error) {
+      console.error('Errore in getUpcomingAppointments:', error);
+      throw error;
+    }
+  }
+}
 
 // Funzioni di utilità
 export const formatAppointmentTime = (appointment: Appointment): string => {
-  return `${appointment.startTime} - ${appointment.endTime}`;
+  return `${appointment.start_time} - ${appointment.end_time}`;
 };
 
 export const getAppointmentDuration = (appointment: Appointment): number => {
-  const startParts = appointment.startTime.split(':').map(Number);
-  const endParts = appointment.endTime.split(':').map(Number);
+  const startParts = appointment.start_time.split(':').map(Number);
+  const endParts = appointment.end_time.split(':').map(Number);
 
   const startMinutes = startParts[0] * 60 + startParts[1];
   const endMinutes = endParts[0] * 60 + endParts[1];
@@ -274,24 +574,19 @@ export const getAppointmentDuration = (appointment: Appointment): number => {
   return endMinutes - startMinutes;
 };
 
-export const getAppointmentTitle = (appointment: Appointment): string => {
-  const store = useAppointmentStore.getState();
-  const patient = store.getPatientById(appointment.patientId);
-  const treatment = store.getTreatmentById(appointment.treatmentId);
+export const getAppointmentTitle = (appointment: AppointmentWithDetails): string => {
+  const patientName = appointment.patient?.first_name && appointment.patient?.last_name
+    ? `${appointment.patient.first_name} ${appointment.patient.last_name}`
+    : appointment.patient?.first_name || 'Paziente';
+  
+  const treatmentName = appointment.treatment?.name || 'Trattamento';
 
-  if (patient && treatment) {
-    return `${patient.name} - ${treatment.name}`;
-  }
-
-  return 'Appuntamento';
+  return `${patientName} - ${treatmentName}`;
 };
 
-export const getAppointmentColor = (appointment: Appointment): string => {
-  const store = useAppointmentStore.getState();
-  const doctor = store.getDoctorById(appointment.doctorId);
-
-  if (doctor) {
-    return doctor.color;
+export const getAppointmentColor = (appointment: AppointmentWithDetails): string => {
+  if (appointment.doctor?.color) {
+    return appointment.doctor.color;
   }
 
   // Colori predefiniti in base allo stato
@@ -309,7 +604,6 @@ export const getAppointmentColor = (appointment: Appointment): string => {
   }
 };
 
-// Funzione di utilità per ottenere il colore del badge in base allo stato
 export const getStatusBadgeColor = (status: string): string => {
   switch (status) {
     case 'confermato':
@@ -325,4 +619,4 @@ export const getStatusBadgeColor = (status: string): string => {
   }
 };
 
-export default useAppointmentStore;
+export default AppointmentService;
